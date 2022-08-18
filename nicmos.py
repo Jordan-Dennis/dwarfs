@@ -1,14 +1,9 @@
 import jax.numpy as np
 import equinox as eqx
 import typing as t
-
+from dLux.utils import get_pixel_positions, get_polar_positions
 
 Matrix = t.TypeVar("Matrix")
-
-
-_pixels = lambda npix : np.arange(npix) - npix / 2 + .5
-_cartesian = lambda npix : np.array(np.meshgrid(_pixels(npix), _pixels(npix)))
-_radial = lambda npix : (_cartesian(npix) ** 2).sum(axis = 0)
 
 
 def nicmos(npix: int, radius: int) -> Matrix:
@@ -20,8 +15,8 @@ def nicmos(npix: int, radius: int) -> Matrix:
        hubble-space-telescope-optics-system
     """
     pixel_scale = 2 * radius / npix 
-    cartesian = _cartesian(npix) * pixel_scale
-    radial = _radial(npix) * pixel_scale
+    cartesian = get_pixel_positions(npix) * pixel_scale
+    radial = get_polar_positions(npix) * pixel_scale
    
     # The optical telescope assembly refers to the optical system 
     # frame (NASA, 2022). 
