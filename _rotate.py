@@ -103,6 +103,13 @@ def fft_3shear_rotate_pad(in_frame, alpha, pad=4, return_full = False):
     pad_xyx=fftpack.ifft((fftpack.fft(pad_xy, axis=0,overwrite_x=True).T*
         np.exp(a*((M*N).T*X).T)).T,axis=0,overwrite_x=True)
 
+
+    pyplot.imshow(np.real(np.exp(a*((M*N).T*X).T)).T)
+    pyplot.show()
+
+    pyplot.imshow(np.real(np.exp(b*(M*X).T*N)))
+    pyplot.show()
+
     # Go back to real space
     # Put back to NaN pixels outside the image.
 

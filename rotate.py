@@ -32,16 +32,18 @@ def conserve_information_and_rotate(
         .at[1 : in_shape[0] + 1, 1 : in_shape[1] + 1]\
         .set(image)
 
-    pyplot.imshow(image)
-    pyplot.show()
+    # NOTE: Correct until here. 
+    # pyplot.imshow(image)
+    # pyplot.show()
 
     # FFT rotation only work in the -45:+45 range
     # So I need to work out how to determine the quadrant that alpha is in and hence the 
     # number of required pi/2 rotations and angle in radians. 
-    half_pi_to_1st_quadrant = (alpha + np.pi / 4) // (np.pi / 2)
-    angle_in_first_quadrant = alpha - (half_pi_to_1st_quadrant * np.pi / 2)
-    
-    print(angle_in_first_quadrant)
+    half_pi_to_1st_quadrant = alpha // (np.pi / 2)
+    angle_in_1st_quadrant = - alpha + (half_pi_to_1st_quadrant * np.pi / 2)
+    print(alpha)
+    print(half_pi_to_1st_quadrant) 
+    print(angle_in_1st_quadrant)
 
     image = np.rot90(image, half_pi_to_1st_quadrant)\
         .at[:-1, :-1]\
@@ -50,7 +52,6 @@ def conserve_information_and_rotate(
     width, height = image.shape
     # Calculate the position that the input array will be in the padded array to simplify
     #  some lines of code later 
-    # NOTE: This is the location to which I have reached. 
     left_corner = int(((pad - 1) / 2.) * width)
     right_corner = int(((pad + 1) / 2.) * width)
     top_corner = int(((pad - 1) / 2.) * height)
@@ -67,42 +68,56 @@ def conserve_information_and_rotate(
         .set(np.where(np.isnan(image), True, False))
     
     # Rotate the mask, to know what part is actually the image
-    padded_mask = rotate(padded_mask, -angle_in_first_quadrant)
+    padded_mask = rotate(padded_mask, -angle_in_1st_quadrant)
 
     # Replace part outside the image which are NaN by 0, and go into Fourier space.
     padded_image = np.where(np.isnan(padded_image), 0. , padded_image)
 
-    pyplot.imshow(padded_image)
-    pyplot.show()
+    # NOTE: Correct Unitl here. 
+    # pyplot.imshow(padded_image)
+    # pyplot.show()
 
-    # So it seems to be fine until here. 
-
-    uncentered_angular_displacement = np.tan(angle_in_first_quadrant / 2.)
-    centered_angular_displacement = -np.sin(angle_in_first_quadrant)
+    
+    uncentered_angular_displacement = np.tan(angle_in_1st_quadrant / 2.)
+    centered_angular_displacement = -np.sin(angle_in_1st_quadrant)
 
     uncentered_frequencies = np.fft.fftfreq(out_shape[0])
     centered_frequencies = np.arange(-out_shape[0] / 2., out_shape[0] / 2.)
 
+    # a = uncentered_angular_displacement
+    # b = centered_angular_displacement
+    # N = uncentered_frequencies
+    # X = centered_frequencies
+
+    pi_factor = -2.j * np.pi * np.ones(out_shape, dtype=float)
+
     uncentered_phase = np.exp(
         uncentered_angular_displacement *\
-        ((-2.j * np.pi * uncentered_frequencies).T *\
-        centered_frequencies).T).T
+        ((pi_factor * centered_frequencies).T *\
+        uncentered_frequencies).T).T
+
+    pyplot.imshow(np.real(uncentered_phase))
+    pyplot.show()
+
     centered_phase = np.exp(
         centered_angular_displacement *\
-        (-2.j * np.pi * centered_frequencies).T *\
-        uncentered_frequencies)
+        (pi_factor * uncentered_frequencies).T *\
+        centered_frequencies)
+
+    pyplot.imshow(np.real(centered_phase))
+    pyplot.show()
+
+    # NOTE: To be honest the stuff above also looked alright. 
+    # I need to double check but it seemed fine. 
+
+    f1 = np.fft.ifft(
+        np.fft.fft(padded_image, axis=0).T * uncentered_phase, axis=0)
+    
+    f2 = np.fft.ifft(
+        np.fft.fft(f1, axis=1) * centered_phase, axis=1)
 
     rotated_image = np.fft.ifft(
-        np.fft.fft(
-            np.fft.ifft(
-                np.fft.fft(
-                    np.fft.ifft(
-                        np.fft.fft(padded_image, axis=0).T * uncentered_phase, 
-                        axis=0), 
-                    axis=1) * centered_phase, 
-                axis=1), 
-            axis=0).T * uncentered_phase, 
-        axis=0)\
+        np.fft.fft(f2, axis=0).T * uncentered_phase, axis=0)\
         .at[padded_mask]\
         .set(np.nan)
 
@@ -123,7 +138,7 @@ import matplotlib.pyplot as pyplot
 pyplot.imshow(image)
 pyplot.show()
 
-image = conserve_information_and_rotate(image, np.pi / 8)
+image = conserve_information_and_rotate(image, np.pi / 4)
 
 pyplot.imshow(image)
 pyplot.show()
