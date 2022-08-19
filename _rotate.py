@@ -33,20 +33,28 @@ def fft_3shear_rotate_pad(in_frame, alpha, pad=4, return_full = False):
     temp = np.zeros((in_frame.shape[0]+3,in_frame.shape[1]+3))+np.nan
     temp[1:in_frame.shape[0]+1,1:in_frame.shape[1]+1]=in_frame
     in_frame = temp
+    
+    pyplot.imshow(in_frame)
+    pyplot.show()
 
     # FFT rotation only work in the -45:+45 range
     if alpha > 45 and alpha < 135:
         in_frame=np.rot90(in_frame, k=1)
         alpha_rad=-np.deg2rad(alpha-90)
+        print("K = 1")
     elif alpha > 135 and alpha < 225:
         in_frame=np.rot90(in_frame, k=2)
         alpha_rad=-np.deg2rad(alpha-180)
+        print("K = 2")
     elif alpha > 225 and alpha < 315:
         in_frame=np.rot90(in_frame, k=3)
         alpha_rad=-np.deg2rad(alpha-270)
+        print("K = 3")
     else:
         alpha_rad=-np.deg2rad(alpha)
+        print("K = 0")
 
+    print("Rotation", alpha_rad) 
          # Remove one extra row
     in_frame = in_frame[:-1,:-1]
 
@@ -73,6 +81,9 @@ def fft_3shear_rotate_pad(in_frame, alpha, pad=4, return_full = False):
 
     # Replace part outside the image which are NaN by 0, and go into Fourier space.
     pad_frame=np.where(np.isnan(pad_frame),0.,pad_frame)
+
+    pyplot.imshow(pad_frame)
+    pyplot.show()
 
 
     ###############################
