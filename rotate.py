@@ -41,9 +41,6 @@ def conserve_information_and_rotate(
     # number of required pi/2 rotations and angle in radians. 
     half_pi_to_1st_quadrant = alpha // (np.pi / 2)
     angle_in_1st_quadrant = - alpha + (half_pi_to_1st_quadrant * np.pi / 2)
-    print(alpha)
-    print(half_pi_to_1st_quadrant) 
-    print(angle_in_1st_quadrant)
 
     image = np.rot90(image, half_pi_to_1st_quadrant)\
         .at[:-1, :-1]\
@@ -77,7 +74,6 @@ def conserve_information_and_rotate(
     # pyplot.imshow(padded_image)
     # pyplot.show()
 
-    
     uncentered_angular_displacement = np.tan(angle_in_1st_quadrant / 2.)
     centered_angular_displacement = -np.sin(angle_in_1st_quadrant)
 
@@ -93,37 +89,33 @@ def conserve_information_and_rotate(
 
     uncentered_phase = np.exp(
         uncentered_angular_displacement *\
-        ((pi_factor * centered_frequencies).T *\
-        uncentered_frequencies).T).T
-
-    pyplot.imshow(np.real(uncentered_phase))
-    pyplot.show()
+        ((pi_factor * uncentered_frequencies).T *\
+        centered_frequencies).T)
 
     centered_phase = np.exp(
         centered_angular_displacement *\
-        (pi_factor * uncentered_frequencies).T *\
-        centered_frequencies)
-
-    pyplot.imshow(np.real(centered_phase))
-    pyplot.show()
+        (pi_factor * centered_frequencies).T *\
+        uncentered_frequencies)
 
     # NOTE: To be honest the stuff above also looked alright. 
     # I need to double check but it seemed fine. 
 
     f1 = np.fft.ifft(
-        np.fft.fft(padded_image, axis=0).T * uncentered_phase, axis=0)
+        (np.fft.fft(padded_image, axis=0).T * uncentered_phase).T, axis=0)
     
     f2 = np.fft.ifft(
         np.fft.fft(f1, axis=1) * centered_phase, axis=1)
 
     rotated_image = np.fft.ifft(
-        np.fft.fft(f2, axis=0).T * uncentered_phase, axis=0)\
+        (np.fft.fft(f2, axis=0).T * uncentered_phase).T, axis=0)\
         .at[padded_mask]\
         .set(np.nan)
+    
+    return np.real(rotated_image\
+        .at[left_corner : right_corner, top_corner : bottom_corner]\
+        .get()).copy()
 
-    return np.real(rotated_image).copy()
-
-shape = (10, 10)
+shape = (100, 100)
 quadrant_1 = np.full(shape, 1., dtype=float)
 quadrant_2 = np.full(shape, 2., dtype=float)
 quadrant_3 = np.full(shape, 3., dtype=float)
