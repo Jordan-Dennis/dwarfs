@@ -10,6 +10,21 @@ matrix = TypeVar("matrix")
 def rotate(
         image: matrix, 
         rotation: float):
+    """
+    Rotate an image by some amount.
+
+    Parameters
+    ----------
+    image: matrix
+        The image to rotate.
+    rotation: float, radians
+        The amount to rotate clockwise from the positive x axis. 
+
+    Returns 
+    -------
+    image: matrix
+        The rotated image. 
+    """
     npix = image.shape[0]
     centre = (npix - 1) / 2
     x_pixels, y_pixels = get_pixel_positions(npix)
@@ -25,6 +40,14 @@ def conserve_information_and_rotate(
         image: matrix, 
         alpha: float, 
         pad: int = 4) -> matrix:
+    """
+    A rotation code that conserbes the information in the image. 
+
+    Parameters
+    ----------
+    image: matrix
+        
+    """
     # We need to add some extra rows since np.rot90 has a different definition of the centre
     in_shape = image.shape
     image_shape = np.array(in_shape, dtype=int) + 3 
@@ -112,7 +135,8 @@ def conserve_information_and_rotate(
         .set(np.nan)
     
     return np.real(rotated_image\
-        .at[left_corner : right_corner, top_corner : bottom_corner]\
+        .at[left_corner + 1 : right_corner - 1, 
+            top_corner + 1 : bottom_corner - 1]\
         .get()).copy()
 
 shape = (100, 100)
@@ -132,5 +156,6 @@ pyplot.show()
 
 image = conserve_information_and_rotate(image, np.pi / 4)
 
+print("Shape After:", image.shape)
 pyplot.imshow(image)
 pyplot.show()
