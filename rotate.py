@@ -139,23 +139,23 @@ def conserve_information_and_rotate(
             top_corner + 1 : bottom_corner - 1]\
         .get()).copy()
 
-shape = (100, 100)
-quadrant_1 = np.full(shape, 1., dtype=float)
-quadrant_2 = np.full(shape, 2., dtype=float)
-quadrant_3 = np.full(shape, 3., dtype=float)
-quadrant_4 = np.full(shape, 4., dtype=float)
-
-top = np.vstack([quadrant_2, quadrant_1])
-bottom = np.vstack([quadrant_3, quadrant_4])
-image = np.hstack([top, bottom])
-
-import matplotlib.pyplot as pyplot
-
-pyplot.imshow(image)
-pyplot.show()
-
-image = conserve_information_and_rotate(image, np.pi / 4)
-
-print("Shape After:", image.shape)
-pyplot.imshow(image)
-pyplot.show()
+#shape = (100, 100)
+#quadrant_1 = np.full(shape, 1., dtype=float)
+#quadrant_2 = np.full(shape, 2., dtype=float)
+#quadrant_3 = np.full(shape, 3., dtype=float)
+#quadrant_4 = np.full(shape, 4., dtype=float)
+#
+#top = np.vstack([quadrant_2, quadrant_1])
+#bottom = np.vstack([quadrant_3, quadrant_4])
+#image = np.hstack([top, bottom])
+#
+#import matplotlib.pyplot as pyplot
+#
+#pyplot.imshow(image)
+#pyplot.show()
+#
+#image = conserve_information_and_rotate(image, np.pi / 4)
+#
+#print("Shape After:", image.shape)
+#pyplot.imshow(image)
+#pyplot.show()
