@@ -6,20 +6,39 @@ from dLux.utils import get_pixel_positions, get_polar_positions
 
 Matrix = t.TypeVar("Matrix")
 
-def nicmos(npix: int, radius: int) -> Matrix:
-    pixel_scale = 2 * radius / npix 
+
+# TODO: Sought out the whole radius thing so that it is more idiomatic. 
+# I think just remove it and padding can be done by another function. 
+# This will probably reduce time ellapsed as well.
+def nicmos(npix: int) -> Matrix:
+    """
+    Constructs a detailed model of the nicmos1 camera pupil on the hubble 
+    space telescope. 
+
+    Parameters
+    ----------
+    npix: int
+        The number of pixels along one edge of the image that represents the 
+        camera pupil.
+
+    Returns
+    -------
+    nicmos: Matrix
+        The pupil of the nicmos1 camera represented as a binary array.
+    """
+    pixel_scale = 2 / npix 
     cartesian = get_pixel_positions(npix, 0., 0.) * pixel_scale
     radial = (get_polar_positions(npix, 0., 0.) * pixel_scale)[0]
    
-    pad_radius = .065 * radius
+    pad_radius = .065 
     pad_1_centre = int(.89221 * npix / 2)
     pad_2_centre = int(.7555 * npix / 2), int(-.4615 * npix / 2)
     pad_3_centre = int(-.7606 * npix / 2), int(-.4564 * npix / 2)
 
-    outer_radius = (radial <= radius)
-    telescope_obstruction = (radial <= .33 * radius)
-    horizontal_spider = (np.abs(cartesian[0]) < .011 * radius)
-    vertical_spider = (np.abs(cartesian[1]) < .011 * radius)
+    outer_radius = (radial <= 1)
+    telescope_obstruction = (radial <= .33)
+    horizontal_spider = (np.abs(cartesian[0]) < .011)
+    vertical_spider = (np.abs(cartesian[1]) < .011)
     mirror_pad_1 = np.roll(radial, pad_1_centre, axis=1) <= pad_radius
     mirror_pad_2 = np.roll(radial, pad_2_centre, axis=(0, 1)) <= pad_radius
     mirror_pad_3 = np.roll(radial, pad_3_centre, axis=(0, 1)) <= pad_radius
@@ -33,13 +52,13 @@ def nicmos(npix: int, radius: int) -> Matrix:
         .at[mirror_pad_2].set(0.)\
         .at[mirror_pad_3].set(0.)
 
-    outer_radius = (radial <= .955 * radius)
-    obstruction = (radial <= .372 * radius)
-    vertical_spider = (np.abs(cartesian[0]) < .0335 * radius)
-    horizontal_spider = (np.abs(cartesian[1]) < .0335 * radius)
+    outer_radius = (radial <= .955)
+    obstruction = (radial <= .372)
+    vertical_spider = (np.abs(cartesian[0]) < .0335)
+    horizontal_spider = (np.abs(cartesian[1]) < .0335)
 
-    inner = (.065) * radius 
-    outer = (.8921 - .065) * radius
+    inner = .065  
+    outer = .8921 - .065
     unrotated_x = cartesian[0]
     unrotated_y = np.abs(cartesian[1])
     rotated_right_x = rotate(cartesian[0], 121. * np.pi / 180)
@@ -65,8 +84,8 @@ def nicmos(npix: int, radius: int) -> Matrix:
 
     return optical_telescope_assembly * nicmos_cold_mask
 
-import matplotlib.pyplot as pyplot
-
-mask = nicmos(1024, 1.)
-pyplot.imshow(mask)
-pyplot.show()
+#import matplotlib.pyplot as pyplot
+#
+#mask = nicmos(1024)
+#pyplot.imshow(mask)
+#pyplot.show()
