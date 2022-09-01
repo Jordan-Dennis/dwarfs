@@ -29,14 +29,28 @@ class Spider(equinox.Module, abc.ABC):
     number_of_pixel: int
     radius_of_spider: float
     width_of_image: float
-    centre_of_spider: (float, float) 
+    centre_of_spider: Array
+
+
+    def _coordinates(self: Layer) -> Array:
+        pixel_scale = self.width_of_image / self.number_of_pixels
+        pixel_centre = centre_of_spider / pixel_scale
+        pixel_coordinates = get_pixel_positions(number_of_pixels, 
+            pixel_centre[0], pixel_centre[1])
+        return pixel_coordinates * pixel_scale  
+ 
 
     def _strut(self: Layer, angle: float) -> Array:
-        get_pixel_positions(number_of_pixels, 0., 0.)
+        coordinates = self._coordinates()
+        distance = np.abs(coordinates[0] * np.cos(angle) \
+            - coordinates[1] / np.sin(angle))
+        return distance
+        
 
-
-    def _sigmoid(self: Layer, structure: Array) -> Array:
-        return 
+    def _sigmoid(self: Layer, angle: float, width: float) -> Array:
+        steepness = 10
+        distance = self._struct(angle)
+        return np.tanh(steepness * (distance - width))
 
 
     @abstractmethod
