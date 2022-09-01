@@ -1,31 +1,31 @@
 # TODO: This is going to be a script for generating arbitrary support 
 # spiders at arbitrary rotation. 
-#class Spider():
-#    npix
-#    radius_of_spider
-#    width_of_image
-#
-#    def _sigmoid(width):
-#        jax.nn.sigmoid
-#
-#    def _strut(angle, width):
-#
-#    @abstractmethod
-#    def _spider():
-#
-#    def __call__():
-#        soft_edged_spider = self.sigmoid(self._spider())
-#  
-#class UniformSpider():
-#    number
-#    rotation
-#    width
-#
-#    def __init__():
-#    
-#    def _spider():
+
 
 class Spider(equinox.Module, abc.ABC):
+    """
+    An abstraction on the concept of an optical spider for a space telescope.
+    These are the things that hold up the secondary mirrors. For example,
+
+        ###########
+        ###  #   ##
+        #    #    #
+        ###########
+        #    #    #
+        ##   #   ##
+        ###########
+
+    Is a shody representation of a 4 structured spider like the Hubble Space 
+    Telescope spider. 
+
+    Parameters
+    ----------
+    number_of_pixels: int
+    radius_of_spider: float
+    width_of_image: float
+    center_of_spicer: Array
+    """
+        
     number_of_pixel: int
     radius_of_spider: float
     width_of_image: float
@@ -40,6 +40,8 @@ class Spider(equinox.Module, abc.ABC):
         return pixel_coordinates * pixel_scale  
  
 
+
+    # TODO: This needs to be truncated to the radius of the spider. 
     def _strut(self: Layer, angle: float) -> Array:
         coordinates = self._coordinates()
         distance = np.abs(coordinates[0] * np.cos(angle) \
