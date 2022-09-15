@@ -132,8 +132,8 @@ class Spider(equinox.Module, abc.ABC):
             The soft edged strut. 
         """
         coordinates = self._rotate(self._coordinates(), angle)
-        distance = np.abs(coordinates[1]).at[coordinates[0] > 0].set(np.inf)
-        spider = self._sigmoid(distance, width / 2.)
+        distance = np.where(coordinates[0] > 0., np.abs(coordinates[1]), np.inf)
+        spider = self._sigmoid(distance, width)
         return spider        
 
     
@@ -297,7 +297,8 @@ class UniformSpider(Spider):
             endpoint=False)
         angles += self.rotation
 
-         spider = np.prod(self._strut(angle, self.width_of_struts), axis=0)
+        struts = self._strut(angles, self.width_of_struts)
+        spider = np.prod(struts, axis=0)
 
         coordinates = self._coordinates()
         radial_coordinates = np.hypot(coordinates[0], coordinates[1])
@@ -333,8 +334,3 @@ class UniformSpider(Spider):
             .set_phase(wavefront.get_phase() * aperture)
         params["Wavefront"] = wavefront
         return params
-
-spider = UniformSpider(1., 1024, .5, [0., 0.], 7, 0.1, 0.)._spider()
-pyplot.imshow(spider)
-pyplot.colorbar()
-pyplot.show()
