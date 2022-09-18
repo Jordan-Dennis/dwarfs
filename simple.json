@@ -1,4 +1,28 @@
 {
-    "name": "simple",
-    "type": "object"
+    "CompoundAperture":
+    [
+        {
+            "SoftEdgedCircularAperture": 
+            {
+                "x_offset": 1.070652, 
+                "y_offset": 0.0,
+                "theta": 0.0,
+                "phi": 0.0,
+                "magnification": 1.0,
+                "radius": 0.078
+            }
+        },
+        {
+            "SoftEdgedCircularAperture": 
+            {
+                "x_offset": -0.5538,
+                "y_offset": 0.9066,
+                "theta": 0.0,
+                "phi": 0.0,
+                "magnification": 1.0,
+                "radius": 0.078
+            }
+        }
+    ]
 }
+

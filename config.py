@@ -1,5 +1,12 @@
 import json
+import dLux
 
-with open("simple.json") as hubble:
-    simple = json.load(hubble)
+def read_json(json: str) -> dict:
+    with open(json) as json_file:
+        contents = json.load(json_file)
+    return contents
 
+
+def decode_object(obj: dict) -> object:
+    if obj in dLux.__all__:
+         exec(f"{obj}(**{})")
