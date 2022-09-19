@@ -1,5 +1,5 @@
 {
-    [
+   [
         [
             "CompoundAperture":
             [
@@ -50,7 +50,7 @@
                 {
                     "UniformSpider":
                     {
-                        "radius_of_spider": 1.2,
+                        "radius_of_aperture": 1.2,
                         "number_of_struts": 4,
                         "width_of_struts": 0.0132,
                         "rotation": 0.785398163,
@@ -71,7 +71,7 @@
                 {
                     "UniformSpider":
                     {
-                        "radius_of_spider": 1.2,
+                        "radius_of_aperture": 1.2,
                         "number_of_struts": 4,
                         "width_of_struts": 0.0402,
                         "rotation": 0.785398163,
@@ -117,7 +117,7 @@
                 {
                     "UniformSpider":
                     {
-                        "radius_of_spider": 1.2,
+                        "radius_of_aperture": 1.2,
                         "number_of_struts": 4,
                         "width_of_struts": 0.20,
                         "rotation": 0.785398163,
