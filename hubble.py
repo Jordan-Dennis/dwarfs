@@ -5,95 +5,95 @@ import typing
 import jax.numpy as np
 
 apertures = {
-        "1": dLux.SoftEdgedCircularAperture( 
-            pixels = 1024,
-            pixel_scale = 0.01,
+        "1": dLux.CircularAperture( 
             x_offset = 1.070652, 
             y_offset = 0.0,
-            theta = 0.0,
-            phi = 0.0,
-            magnification = 1.0,
-            radius = 0.078),
-        "2": dLux.SoftEdgedCircularAperture(
-            pixels = 1024,
-            pixel_scale = 0.01,
+            radius = 0.078,
+            occulting = True,
+            softening = True),
+        "2": dLux.CircularAperture(
             x_offset = -0.5538,
             y_offset = 0.9066,
-            theta = 0.0,
-            phi = 0.0,
-            magnification = 1.0,
-            radius = 0.078),
-        "3": dLux.SoftEdgedCircularAperture(
-            pixels = 1024,
-            pixel_scale = 0.01,
+            radius = 0.078,
+            occulting = True,
+            softening = False),
+        "3": dLux.CircularAperture(
             x_offset = -0.54768,
             y_offset = -0.91272,
-            theta = 0.0,
-            phi = 0.0,
-            magnification = 1.0,
-            radius = 0.078),
-        "4": dLux.SoftEdgedCircularAperture(
-            pixels = 1024,
-            pixel_scale = 0.01,
+            radius = 0.078,
+            occulting = True,
+            softening = False),
+        "4": dLux.CircularAperture(
             x_offset = 0.0,
             y_offset = 0.0,
-            theta = 0.0,
-            phi = 0.0,
-            magnification = 1.0,
-            radius = 0.396),
-        "5": dLux.UniformSpider( 
-            number_of_pixels = 1024,
-            width_of_image = 1024 * 0.01,
-            radius_of_aperture = 1.2,
+            radius = 0.396,
+            occulting = True,
+            softening = True),
+        "11": dLux.CircularAperture(
+            x_offset = 0.0,
+            y_offset = 0.0,
+            radius = 1.2,
+            occulting = False,
+            softening = True),
+        "5": dLux.EvenUniformSpider( 
+            x_offset = 0.0,
+            y_offset = 0.0,
             number_of_struts = 4,
             width_of_struts = 0.0132,
             rotation = 0.785398163,
-            centre_of_aperture = [0.0, 0.0]),
-        "6": dLux.SoftEdgedCircularAperture(
-            pixels = 1024,
-            pixel_scale = 0.01,
-            x_offset = -0.096,
+            softening = True),
+        # NOTE: Below this is the cold mask
+        "12": dLux.CircularAperture(
+            x_offset = 0.096,
             y_offset = 0.0,
-            theta = 0.0,
-            phi = 0.0,
-            magnification = 1.0,
-            radius = 0.4464),
-        "7": dLux.UniformSpider(
-            number_of_pixels = 1024,
-            width_of_image = 1024 * 0.01,
-            radius_of_aperture = 1.2,
+            radius = 1.2,
+            occulting = False,
+            softening = True),
+        "6": dLux.CircularAperture(
+            x_offset = 0.096,
+            y_offset = 0.0,
+            radius = 0.4464,
+            occulting = True,
+            softening = True),
+        "7": dLux.EvenUniformSpider(
+            x_offset = -0.096,  
+            y_offset = 0.0,
             number_of_struts = 4,
             width_of_struts = 0.0402,
             rotation = 0.785398163,
-            centre_of_aperture = [-0.096, 0.0]),
-        "8": dLux.SoftEdgedSquareAperture(
-            pixels = 1024,
-            pixel_scale = 0.01,
-            x_offset = -0.7636, 
-            y_offset = 0.0,
-            theta = 2.12057504,
-            phi = 0.0,
-            magnification = 1.0,
-            width = 0.078),
-        "9": dLux.SoftEdgedSquareAperture(
-            pixels = 1024,
-            pixel_scale = 0.01,
-            x_offset = -0.7636, 
+            softening = True),
+        "8": dLux.SquareAperture(
+            x_offset = -0.478775884, 
+            y_offset = -0.781291236,
+            theta = -2.12057504,
+            width = 0.078,
+            occulting = True,
+            softening = True),
+        "9": dLux.SquareAperture(
+            x_offset = 0.91632, 
             y_offset = 0.0,
             theta = 0.0,
-            phi = 0.0,
-            magnification = 1.0,
-            width = 0.078)}
+            width = 0.078,
+            occulting = True, 
+            softening = True),
+        "10": dLux.SquareAperture(
+            x_offset = -0.471396840, 
+            y_offset = 0.785559492,
+            theta = 2.11184839,
+            width = 0.078,
+            occulting = True,
+            softening = True)}
 
-nicmos = dLux.CompoundAperture(1024, 0.01, apertures)
+nicmos = dLux.CompoundAperture(apertures)
 
+coordinates = dLux.utils.get_pixel_coordinates(1024, 0.003, 0., 0.)
 
-#for aperture in apertures.values():
-#    pyplot.imshow(aperture._aperture())
-#    pyplot.colorbar()
-#    pyplot.show() 
+for i, aperture in enumerate(apertures.values()):
+    pyplot.subplot(3, 4, i + 1)
+    pyplot.imshow(aperture._aperture(coordinates))
+    pyplot.colorbar()
+pyplot.show() 
 
-
-pyplot.imshow(nicmos._aperture())
+pyplot.imshow(nicmos._aperture(coordinates))
 pyplot.colorbar()
 pyplot.show()
