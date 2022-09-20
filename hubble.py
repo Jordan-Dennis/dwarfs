@@ -89,13 +89,4 @@ nicmos = dLux.CompoundAperture(apertures)
 
 coordinates = dLux.utils.get_pixel_coordinates(1024, 0.003, 0., 0.)
 
-for i, aperture in enumerate(apertures):
-    pyplot.subplot(3, 4, i + 1)
-    pyplot.title(aperture)
-    pyplot.imshow(apertures[aperture]._aperture(coordinates))
-    pyplot.colorbar()
-pyplot.show() 
 
-pyplot.imshow(nicmos._aperture(coordinates))
-pyplot.colorbar()
-pyplot.show()
