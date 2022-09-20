@@ -84,8 +84,8 @@ def nicmos(npix: int) -> Matrix:
 
     return optical_telescope_assembly * nicmos_cold_mask
 
-#import matplotlib.pyplot as pyplot
-#
-#mask = nicmos(1024)
-#pyplot.imshow(mask)
-#pyplot.show()
+import matplotlib.pyplot as pyplot
+
+mask = nicmos(1024)
+pyplot.imshow(mask)
+pyplot.show()

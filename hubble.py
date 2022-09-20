@@ -2,6 +2,7 @@ import equinox
 import dLux
 import typing
 import jax.numpy as np
+import matplotlib.pyplot as pyplot
 
 
 Wavefront = typing.TypeVar("Wavefront")
@@ -104,8 +105,8 @@ class HubbleSpaceTelescope(equinox.Module):
         """
         pix_scale = 2 / npix 
         mask_shift = int(self.mask_shift * npix / 2)
-        cartesian = get_pixel_positions(npix + mask_shift, 0., 0.) * pix_scale
-        radial = (get_polar_positions(npix + mask_shift, 0., 0.) * pix_scale)[0]
+        cartesian = dLux.utils.get_pixel_positions(npix + mask_shift, 0., 0.) * pix_scale
+        radial = (dLux.utils.get_polar_positions(npix + mask_shift, 0., 0.) * pix_scale)[0]
        
         pad_radius = .065
         pad_1_centre = int(.89221 * npix / 2) # In units of pixels
@@ -136,7 +137,7 @@ class HubbleSpaceTelescope(equinox.Module):
         nicmos_obstruction_width = .372
         nicmos_spider_width = .0335
         outer_radius = (radial <= .955)
-        obstruction = (radial <= nicmos_obstruction_radius)
+        obstruction = (radial <= nicmos_obstruction_width)
         vertical_spider = (np.abs(cartesian[0]) < nicmos_spider_width)
         horizontal_spider = (np.abs(cartesian[1]) < nicmos_spider_width)
 
@@ -189,12 +190,8 @@ class HubbleSpaceTelescope(equinox.Module):
 
 
 hubble = HubbleSpaceTelescope()
-wave = dLux.GaussianWavefront(
-        offset=[0., 0.], 
-        beam_radius=1.2, 
-        wavelength = 1.5e-6)\
-    .set_amplitude(np.ones((1024, 1024)))\
-    .set_phase(np.ones((1024, 1024)))
-    
 
-hubble()
+pyplot.imshow(hubble.nicmos(1024))
+pyplot.colorbar()
+pyplot.show()
+    
