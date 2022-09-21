@@ -85,8 +85,23 @@ apertures = {
             occulting = True,
             softening = True)}
 
-nicmos = dLux.CompoundAperture(apertures)
+hubble = dLux.OpticalSystem(
+    [dLux.CreateWavefront(1024, 2.4), 
+     dLux.CompoundAperture(apertures), 
+     dLux.PhysicalFFT(57.6)], 
+    wavels = [550e-09])
 
-coordinates = dLux.utils.get_pixel_coordinates(1024, 0.003, 0., 0.)
+wavefront = dLux.CreateWavefront(1024, 2.4)({"wavelength": 550e-09, "offset": [0., 0.]})["Wavefront"]
+pyplot.subplot(2, 1, 1)
+pyplot.title("Amplitude")
+pyplot.imshow(wavefront.amplitude[0])
+pyplot.colorbar()
+pyplot.subplot(2, 1, 2)
+pyplot.title("Phase")
+pyplot.imshow(wavefront.phase[0])
+pyplot.colorbar()
 
-
+pyplot.show()
+pyplot.imshow(hubble())
+pyplot.colorbar()
+pyplot.show()
