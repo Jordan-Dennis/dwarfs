@@ -101,4 +101,14 @@ plt.title("Log scale")
 plt.imshow(np.log10(psf))
 plt.colorbar()
 plt.show()
+from astropy.io import fits
+from matplotlib import pyplot
 
+file_name = "data/MAST_2022-08-02T2026/HST/n9nk01010/n9nk01010_mos.fits"
+
+with fits.open(file_name) as hubble_data:
+    data = hubble_data[1].data
+
+pyplot.imshow(data)
+pyplot.colorbar()
+pyplot.show()
