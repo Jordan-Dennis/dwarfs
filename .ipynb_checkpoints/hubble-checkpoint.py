@@ -1,4 +1,6 @@
 import jax 
+import tqdm
+import optax
 import dLux as dl
 import equinox as eqx
 import jax.numpy as np
@@ -70,55 +72,51 @@ class NicmosColdMask(dl.CompoundAperture):
                     np.asarray(self.y_offset + delta_y_offset).astype(float)))
     
 
-nicmos = NicmosColdMask(- 0.0678822510,  - 0.0678822510)
+class HubblePupil(dl.CompoundAperture):
+    def __init__(self):
+        self.apertures = {
+            "Mirror Pad 1": dl.CircularAperture( 
+                x_offset = 1.070652 * np.cos(- np.pi / 4), 
+                y_offset = 1.070652 * np.sin(- np.pi / 4),
+                radius = 0.078,
+                occulting = True,
+                softening = True),
+            "Mirror Pad 2": dl.CircularAperture(
+                x_offset = 1.070652 * np.cos(-np.pi / 4 + 2 * np.pi / 3), 
+                y_offset = 1.070652 * np.sin(-np.pi / 4 + 2 * np.pi / 3),
+                radius = 0.078,
+                occulting = True,
+                softening = False),
+            "Mirror Pad 3": dl.CircularAperture(
+                x_offset = 1.070652 * np.cos(-np.pi / 4 - 2 * np.pi / 3), 
+                y_offset = 1.070652 * np.sin(-np.pi / 4 - 2 * np.pi / 3),
+                radius = 0.078,
+                occulting = True,
+                softening = False),
+            "Obstruction": dl.CircularAperture(
+                x_offset = 0.0,
+                y_offset = 0.0,
+                radius = 0.396,
+                occulting = True,
+                softening = True),
+            "Aperture": dl.CircularAperture(
+                x_offset = 0.0,
+                y_offset = 0.0,
+                radius = 1.2,
+                occulting = False,
+                softening = True),
+            "Spider": dl.EvenUniformSpider( 
+                x_offset = 0.0,
+                y_offset = 0.0,
+                number_of_struts = 4,
+                width_of_struts = 0.0132,
+                rotation = 0.785398163,
+                softening = True)}
 
-nicmos = nicmos.set_offset(-0.1, 0.3)
-
-coordinates = dl.utils.get_pixel_coordinates(1024, 0.003, 0, 0)
-plt.imshow(nicmos._aperture(coordinates))
-plt.colorbar()
-plt.show()
 
 apertures = {
-    "1": dl.CircularAperture( 
-        x_offset = 1.070652 * np.cos(- np.pi / 4), 
-        y_offset = 1.070652 * np.sin(- np.pi / 4),
-        radius = 0.078,
-        occulting = True,
-        softening = True),
-    "2": dl.CircularAperture(
-        x_offset = 1.070652 * np.cos(-np.pi / 4 + 2 * np.pi / 3), 
-        y_offset = 1.070652 * np.sin(-np.pi / 4 + 2 * np.pi / 3),
-        radius = 0.078,
-        occulting = True,
-        softening = False),
-    "3": dl.CircularAperture(
-        x_offset = 1.070652 * np.cos(-np.pi / 4 - 2 * np.pi / 3), 
-        y_offset = 1.070652 * np.sin(-np.pi / 4 - 2 * np.pi / 3),
-        radius = 0.078,
-        occulting = True,
-        softening = False),
-    "4": dl.CircularAperture(
-        x_offset = 0.0,
-        y_offset = 0.0,
-        radius = 0.396,
-        occulting = True,
-        softening = True),
-    "11": dl.CircularAperture(
-        x_offset = 0.0,
-        y_offset = 0.0,
-        radius = 1.2,
-        occulting = False,
-        softening = True),
-    "5": dl.EvenUniformSpider( 
-        x_offset = 0.0,
-        y_offset = 0.0,
-        number_of_struts = 4,
-        width_of_struts = 0.0132,
-        rotation = 0.785398163,
-        softening = True),
-    # NOTE: Below this is the cold mask
-    
+    "Pupil": HubblePupil(),
+    "Nicmos": NicmosColdMask(-0.0678822510,  -0.0678822510)}
 
 file_name = "data/MAST_2022-08-02T2026/HST/n9nk01010/n9nk01010_mos.fits"
 
@@ -140,6 +138,8 @@ hubble = dl.OpticalSystem(
      dl.AngularMFT(dl.utils.arcsec2rad(0.043), 64)], 
     wavels = nicmos_filter[:, 0] * 1e-9, 
     weights = nicmos_filter[:, 1])
+
+data = (data) / data.sum()
 
 # +
 psf = hubble()
@@ -166,9 +166,68 @@ plt.colorbar()
 plt.show()
 # -
 
-filter_spec = model.get_filter_spec([coeffs_path])
+filter_spec = jax.tree_map(lambda _: False, hubble)
+
+filter_spec = eqx.tree_at(
+    lambda tree: 
+        (tree.layers[1]["Nicmos"].x_offset, tree.layers[1]["Nicmos"].y_offset),
+    filter_spec, replace_fn=lambda leaf: leaf is False)
+
+
 @eqx.filter_jit
 @eqx.filter_value_and_grad(arg=filter_spec)
 def loss_func(model, data):
-    out = model.propagate()
-    return -np.sum(jax.scipy.stats.poisson.logpmf(data, out))
+    out = model()
+    return np.sum((data - out) ** 2)
+
+
+# +
+optim = optax.adam(2.5e1)
+opt_state = optim.init(hubble)
+
+errors, grads_out, models_out = [], [], []
+
+with tqdm.tqdm(range(50), desc='Gradient Descent') as t:
+    for i in t: 
+        loss, grads = loss_func(hubble, data)
+        updates, opt_state = optim.update(grads, opt_state)
+
+        model.set_offset()
+        
+        models_out.append(hubble)
+        errors.append(loss)
+        grads_out.append(grads)
+
+        t.set_description("Loss: {:.3f}".format(loss)) #
+# -
+
+grads
+
+# +
+psf = models_out[-1]()
+plt.figure(figsize=(10, 10))
+plt.subplot(2, 2, 1)
+plt.title("Linear scale")
+plt.imshow(psf)
+plt.colorbar()
+
+plt.subplot(2, 2, 2)
+plt.title("Log scale")
+plt.imshow(psf ** 0.25)
+plt.colorbar()
+
+plt.subplot(2, 2, 3)
+plt.title("Linear scale")
+plt.imshow(data)
+plt.colorbar()
+
+plt.subplot(2, 2, 4)
+plt.title("Log scale")
+plt.imshow(data ** 0.25)
+plt.colorbar()
+plt.show()
+# -
+
+errors
+
+
