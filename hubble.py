@@ -19,41 +19,41 @@ class NicmosColdMask(dl.CompoundAperture):
         self.y_offset = np.asarray(y_offset).astype(float)
         self.apertures = {
             "Outer": dl.CircularAperture(
-                x_offset = x_offset,
-                y_offset = y_offset,
+                x_offset = self.x_offset,
+                y_offset = self.y_offset,
                 radius = 1.2,
                 occulting = False,
                 softening = True),
             "Obstruction": dl.CircularAperture(
-                x_offset = x_offset,
-                y_offset = y_offset,
+                x_offset = self.x_offset,
+                y_offset = self.y_offset,
                 radius = 0.4464,
                 occulting = True,
                 softening = True),
             "Spider": dl.EvenUniformSpider(
-                x_offset = x_offset,
-                y_offset = y_offset,
+                x_offset = self.x_offset,
+                y_offset = self.y_offset,
                 number_of_struts = 4,
                 width_of_struts = 0.0402,
                 rotation = 0.785398163,
                 softening = True),
             "Mirror Pad 1": dl.SquareAperture(
-                x_offset = 1.070652 * np.cos(- np.pi / 4) + x_offset, 
-                y_offset = 1.070652 * np.sin(- np.pi / 4) + y_offset,
+                x_offset = 1.070652 * np.cos(- np.pi / 4) + self.x_offset, 
+                y_offset = 1.070652 * np.sin(- np.pi / 4) + self.y_offset,
                 theta = - np.pi / 4,
                 width = 0.156,
                 occulting = True,
                 softening = True),
             "Mirror Pad 2": dl.SquareAperture(
-                x_offset = 1.070652 * np.cos(- np.pi / 4 + 2 * np.pi / 3) + x_offset, 
-                y_offset = 1.070652 * np.sin(- np.pi / 4 + 2 * np.pi / 3) + y_offset,
+                x_offset = 1.070652 * np.cos(- np.pi / 4 + 2 * np.pi / 3) + self.x_offset, 
+                y_offset = 1.070652 * np.sin(- np.pi / 4 + 2 * np.pi / 3) + self.y_offset,
                 theta = - np.pi / 4 + np.pi / 3,
                 width = 0.156,
                 occulting = True, 
                 softening = True),
             "Mirror Pad 3": dl.SquareAperture(
-                x_offset = 1.070652 * np.cos(- np.pi / 4 - 2 * np.pi / 3) + x_offset, 
-                y_offset = 1.070652 * np.sin(- np.pi / 4 - 2 * np.pi / 3) + y_offset,
+                x_offset = 1.070652 * np.cos(- np.pi / 4 - 2 * np.pi / 3) + self.x_offset, 
+                y_offset = 1.070652 * np.sin(- np.pi / 4 - 2 * np.pi / 3) + self.y_offset,
                 theta = - np.pi / 3 - np.pi / 4,
                 width = 0.156,
                 occulting = True,
@@ -65,7 +65,7 @@ class NicmosColdMask(dl.CompoundAperture):
             self.y_offset + delta_y_offset)
     
     
-    def set_offset (self, x_offset: float, y_offset: float):
+    def set_offset(self, x_offset: float, y_offset: float):
         for aperture in self.apertures:
             self[aperture] = self[aperture]\
                 .set_x_offset(x_offset)\
@@ -75,6 +75,10 @@ class NicmosColdMask(dl.CompoundAperture):
             lambda aperture: (aperture.x_offset, aperture.y_offset), 
                 self, (np.asarray(x_offset).astype(float), 
                     np.asarray(y_offset).astype(float)))
+    
+    def _aperture(self, coordinates: float) -> float:
+        self = self.set_offset(self.x_offset, self.y_offset)
+        return super()._aperture(coordinates)
 
 
 class HubblePupil(dl.CompoundAperture):
@@ -121,7 +125,7 @@ class HubblePupil(dl.CompoundAperture):
 
 apertures = {
     "Pupil": HubblePupil(),
-    "Nicmos": NicmosColdMask(-0.0678822510,  -0.0678822510)}
+    "Nicmos": NicmosColdMask(0., 0.)}
 
 file_name = "data/MAST_2022-08-02T2026/HST/n9nk01010/n9nk01010_mos.fits"
 
@@ -169,8 +173,8 @@ plt.show()
 # -
 
 filter_spec = eqx.tree_at(lambda tree: 
-        (tree.layers[1]["Nicmos"]["Obstruction"].x_offset, 
-        tree.layers[1]["Nicmos"]["Obstruction"].y_offset),
+        (tree.layers[1]["Nicmos"].x_offset, 
+        tree.layers[1]["Nicmos"].y_offset),
     jax.tree_map(lambda _: False, hubble), (True, True))
 
 
@@ -184,7 +188,7 @@ def loss_func(model, data):
 loss, grads = loss_func(hubble, data)
 
 # +
-optim = optax.adam(2.5e-1)
+optim = optax.adam(1e-1)
 opt_state = optim.init(hubble)
 
 errors, grads_out, models_out = [], [], []
@@ -196,24 +200,20 @@ with tqdm.tqdm(range(5), desc='Gradient Descent') as t:
         
         delta_y_offset = updates\
             .layers[1]\
-            .apertures["Nicmos"]["Obstruction"]\
+            .apertures["Nicmos"]\
             .y_offset
         
         delta_x_offset = updates\
             .layers[1]\
-            .apertures["Nicmos"]["Obstruction"]\
+            .apertures["Nicmos"]\
             .x_offset
         
-        print(delta_x_offset)
+        nicmos = hubble.layers[1]["Nicmos"]
         
-        obstruction = hubble.layers[1]["Nicmos"]["Obstruction"]
+        new_nicmos = nicmos.update_offset(delta_x_offset, delta_y_offset)
         
-        new_obstruction = obstruction\
-            .set_x_offset(obstruction.x_offset + delta_x_offset)\
-            .set_y_offset(obstruction.y_offset + delta_y_offset)
-        
-        hubble = eqx.tree_at(lambda tree: tree.layers[1]["Nicmos"]["Obstruction"], 
-            hubble, new_obstruction)
+        hubble = eqx.tree_at(lambda tree: tree.layers[1]["Nicmos"], 
+            hubble, new_nicmos)
         
         models_out.append(hubble)
         errors.append(loss)
