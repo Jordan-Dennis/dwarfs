@@ -60,17 +60,22 @@ class NicmosColdMask(dl.CompoundAperture):
                 softening = True)}
         
         
-    def set_offset(self, delta_x_offset: float, delta_y_offset: float):
+    def update_offset(self, delta_x_offset: float, delta_y_offset: float):
+        return self.set_offset(self.x_offset + delta_x_offset, 
+            self.y_offset + delta_y_offset)
+    
+    
+    def set_offset (self, x_offset: float, y_offset: float):
         for aperture in self.apertures:
             self[aperture] = self[aperture]\
-                .set_x_offset(self[aperture].get_x_offset() + delta_x_offset)\
-                .set_y_offset(self[aperture].get_y_offset() + delta_y_offset)
-        
+                .set_x_offset(x_offset)\
+                .set_y_offset(y_offset)
+            
         return eqx.tree_at(
             lambda aperture: (aperture.x_offset, aperture.y_offset), 
-                self, (np.asarray(self.x_offset + delta_x_offset).astype(float), 
-                    np.asarray(self.y_offset + delta_y_offset).astype(float)))
-    
+                self, (np.asarray(x_offset).astype(float), 
+                    np.asarray(y_offset).astype(float)))
+
 
 class HubblePupil(dl.CompoundAperture):
     def __init__(self):
@@ -128,9 +133,6 @@ with open("data/filters/HST_NICMOS1.F170M.dat") as filter_data:
         [[float(entry) for entry in line.strip().split(" ")] for line in filter_data])
 
 
-plt.plot(nicmos_filter[:, 0] * 1e-9, nicmos_filter[:, 1])
-plt.show()
-
 hubble = dl.OpticalSystem(
     [dl.CreateWavefront(512, 2.4, wavefront_type='Angular'), 
      dl.CompoundAperture(apertures), 
@@ -142,7 +144,7 @@ hubble = dl.OpticalSystem(
 data = (data) / data.sum()
 
 # +
-psf = hubble()
+psf = hubble.propagate()
 plt.figure(figsize=(10, 10))
 plt.subplot(2, 2, 1)
 plt.title("Linear scale")
@@ -166,45 +168,61 @@ plt.colorbar()
 plt.show()
 # -
 
-filter_spec = jax.tree_map(lambda _: False, hubble)
-
-filter_spec = eqx.tree_at(
-    lambda tree: 
-        (tree.layers[1]["Nicmos"].x_offset, tree.layers[1]["Nicmos"].y_offset),
-    filter_spec, replace_fn=lambda leaf: leaf is False)
+filter_spec = eqx.tree_at(lambda tree: 
+        (tree.layers[1]["Nicmos"]["Obstruction"].x_offset, 
+        tree.layers[1]["Nicmos"]["Obstruction"].y_offset),
+    jax.tree_map(lambda _: False, hubble), (True, True))
 
 
 @eqx.filter_jit
 @eqx.filter_value_and_grad(arg=filter_spec)
 def loss_func(model, data):
-    out = model()
+    out = model.propagate()
     return np.sum((data - out) ** 2)
 
 
+loss, grads = loss_func(hubble, data)
+
 # +
-optim = optax.adam(2.5e1)
+optim = optax.adam(2.5e-1)
 opt_state = optim.init(hubble)
 
 errors, grads_out, models_out = [], [], []
 
-with tqdm.tqdm(range(50), desc='Gradient Descent') as t:
+with tqdm.tqdm(range(5), desc='Gradient Descent') as t:
     for i in t: 
         loss, grads = loss_func(hubble, data)
         updates, opt_state = optim.update(grads, opt_state)
-
-        model.set_offset()
+        
+        delta_y_offset = updates\
+            .layers[1]\
+            .apertures["Nicmos"]["Obstruction"]\
+            .y_offset
+        
+        delta_x_offset = updates\
+            .layers[1]\
+            .apertures["Nicmos"]["Obstruction"]\
+            .x_offset
+        
+        print(delta_x_offset)
+        
+        obstruction = hubble.layers[1]["Nicmos"]["Obstruction"]
+        
+        new_obstruction = obstruction\
+            .set_x_offset(obstruction.x_offset + delta_x_offset)\
+            .set_y_offset(obstruction.y_offset + delta_y_offset)
+        
+        hubble = eqx.tree_at(lambda tree: tree.layers[1]["Nicmos"]["Obstruction"], 
+            hubble, new_obstruction)
         
         models_out.append(hubble)
         errors.append(loss)
         grads_out.append(grads)
 
         t.set_description("Loss: {:.3f}".format(loss)) #
-# -
-
-grads
 
 # +
-psf = models_out[-1]()
+psf = models_out[-1].propagate()
 plt.figure(figsize=(10, 10))
 plt.subplot(2, 2, 1)
 plt.title("Linear scale")
@@ -228,6 +246,10 @@ plt.colorbar()
 plt.show()
 # -
 
-errors
+aperture = models_out[-1].layers[1]["Nicmos"]._aperture(dl.utils.get_pixel_coordinates(1024, 0.003, 0., 0.))
+
+plt.imshow(aperture)
+plt.colorbar()
+plt.show()
 
 
