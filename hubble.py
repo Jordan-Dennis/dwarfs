@@ -249,4 +249,86 @@ plt.imshow(aperture)
 plt.colorbar()
 plt.show()
 
+# +
+# So this is going to be the bottom of the spectrum PSF followed by the top of the 
+# spectrum PSF
+# -
 
+bottom_spectrum_hubble = dl.OpticalSystem(
+    [dl.CreateWavefront(512, 2.4, wavefront_type='Angular'), 
+     dl.CompoundAperture(apertures), 
+     dl.NormaliseWavefront(),
+     dl.AngularMFT(dl.utils.arcsec2rad(0.043), 64)], 
+    wavels = [nicmos_filter[50, 0] * 1e-9])
+
+# +
+psf = bottom_spectrum_hubble.propagate()
+plt.figure(figsize=(10, 10))
+plt.subplot(2, 2, 1)
+plt.title("Linear scale")
+plt.imshow(psf)
+plt.colorbar()
+
+plt.subplot(2, 2, 2)
+plt.title("Log scale")
+plt.imshow(psf ** 0.25)
+plt.colorbar()
+
+plt.subplot(2, 2, 3)
+plt.title("Linear scale")
+plt.imshow(data)
+plt.colorbar()
+
+plt.subplot(2, 2, 4)
+plt.title("Log scale")
+plt.imshow(data ** 0.25)
+plt.colorbar()
+plt.show()
+# -
+
+top_spectrum_hubble = dl.OpticalSystem(
+    [dl.CreateWavefront(512, 2.4, wavefront_type='Angular'), 
+     dl.CompoundAperture(apertures), 
+     dl.NormaliseWavefront(),
+     dl.AngularMFT(dl.utils.arcsec2rad(0.043), 64)], 
+    wavels = [nicmos_filter[-50, 0] * 1e-9])
+
+# +
+psf = top_spectrum_hubble.propagate()
+plt.figure(figsize=(10, 10))
+plt.subplot(2, 2, 1)
+plt.title("Linear scale")
+plt.imshow(psf)
+plt.colorbar()
+
+plt.subplot(2, 2, 2)
+plt.title("Log scale")
+plt.imshow(psf ** 0.25)
+plt.colorbar()
+
+plt.subplot(2, 2, 3)
+plt.title("Linear scale")
+plt.imshow(data)
+plt.colorbar()
+
+plt.subplot(2, 2, 4)
+plt.title("Log scale")
+plt.imshow(data ** 0.25)
+plt.colorbar()
+plt.show()
+
+# +
+# This is where I attempt to get the Fresnel PSF and then from there I will attempt
+# some HMC
+# -
+
+dl.GaussianLens
+
+hubble = dl.OpticalSystem(
+    [dl.CreateWavefront(512, 2.4, wavefront_type='FarFieldFresnel'), 
+     apertures["Pupil"], 
+     dl.NormaliseWavefront(),
+    
+     dl.AngularMFT(dl.utils.arcsec2rad(0.043), 64)], 
+    wavels = nicmos_filter[:, 0] * 1e-9, 
+    weights = nicmos_filter[:, 1])
