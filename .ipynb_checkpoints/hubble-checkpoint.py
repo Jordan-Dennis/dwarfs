@@ -34,26 +34,26 @@ class NicmosColdMask(dl.CompoundAperture):
                 x_offset = x_offset,
                 y_offset = y_offset,
                 number_of_struts = 4,
-                width_of_struts = 0.0402,
+                width_of_struts = 0.0804,
                 rotation = 0.785398163,
                 softening = True),
             "Mirror Pad 1": dl.SquareAperture(
-                x_offset = 1.070652 * np.cos(- np.pi / 4) + x_offset, 
-                y_offset = 1.070652 * np.sin(- np.pi / 4) + y_offset,
+                x_offset = 1.070652 * np.cos(np.pi / 4) + x_offset, 
+                y_offset = 1.070652 * np.sin(np.pi / 4) + y_offset,
                 theta = - np.pi / 4,
                 width = 0.156,
                 occulting = True,
                 softening = True),
             "Mirror Pad 2": dl.SquareAperture(
-                x_offset = 1.070652 * np.cos(- np.pi / 4 + 2 * np.pi / 3) + x_offset, 
-                y_offset = 1.070652 * np.sin(- np.pi / 4 + 2 * np.pi / 3) + y_offset,
+                x_offset = 1.070652 * np.cos(np.pi / 4 + 2 * np.pi / 3) + x_offset, 
+                y_offset = 1.070652 * np.sin(np.pi / 4 + 2 * np.pi / 3) + y_offset,
                 theta = - np.pi / 4 + np.pi / 3,
                 width = 0.156,
                 occulting = True, 
                 softening = True),
             "Mirror Pad 3": dl.SquareAperture(
-                x_offset = 1.070652 * np.cos(- np.pi / 4 - 2 * np.pi / 3) + x_offset, 
-                y_offset = 1.070652 * np.sin(- np.pi / 4 - 2 * np.pi / 3) + y_offset,
+                x_offset = 1.070652 * np.cos(np.pi / 4 - 2 * np.pi / 3) + x_offset, 
+                y_offset = 1.070652 * np.sin(np.pi / 4 - 2 * np.pi / 3) + y_offset,
                 theta = - np.pi / 3 - np.pi / 4,
                 width = 0.156,
                 occulting = True,
@@ -82,20 +82,20 @@ class HubblePupil(dl.CompoundAperture):
     def __init__(self):
         self.apertures = {
             "Mirror Pad 1": dl.CircularAperture( 
-                x_offset = 1.070652 * np.cos(- np.pi / 4), 
-                y_offset = 1.070652 * np.sin(- np.pi / 4),
+                x_offset = 1.070652 * np.cos(np.pi / 4), 
+                y_offset = 1.070652 * np.sin(np.pi / 4),
                 radius = 0.078,
                 occulting = True,
                 softening = True),
             "Mirror Pad 2": dl.CircularAperture(
-                x_offset = 1.070652 * np.cos(-np.pi / 4 + 2 * np.pi / 3), 
-                y_offset = 1.070652 * np.sin(-np.pi / 4 + 2 * np.pi / 3),
+                x_offset = 1.070652 * np.cos(np.pi / 4 + 2 * np.pi / 3), 
+                y_offset = 1.070652 * np.sin(np.pi / 4 + 2 * np.pi / 3),
                 radius = 0.078,
                 occulting = True,
                 softening = False),
             "Mirror Pad 3": dl.CircularAperture(
-                x_offset = 1.070652 * np.cos(-np.pi / 4 - 2 * np.pi / 3), 
-                y_offset = 1.070652 * np.sin(-np.pi / 4 - 2 * np.pi / 3),
+                x_offset = 1.070652 * np.cos(np.pi / 4 - 2 * np.pi / 3), 
+                y_offset = 1.070652 * np.sin(np.pi / 4 - 2 * np.pi / 3),
                 radius = 0.078,
                 occulting = True,
                 softening = False),
@@ -115,7 +115,7 @@ class HubblePupil(dl.CompoundAperture):
                 x_offset = 0.0,
                 y_offset = 0.0,
                 number_of_struts = 4,
-                width_of_struts = 0.0132,
+                width_of_struts = 0.0132 * 2.,
                 rotation = 0.785398163,
                 softening = True)}
 
@@ -123,26 +123,26 @@ class HubblePupil(dl.CompoundAperture):
 # +
 from xaosim.pupil import HST_NIC1 as HST
 
-PSZ = 2048   # size of the array for the model
-rad = 1024
+PSZ = 512   # size of the array for the model
+rad = 256
 pmask = HST(PSZ, rad, ang=45) # rotated!
 # -
 
-plt.imshow(pmask)
-plt.colorbar()
-plt.show()
-
-apertures = {
+dlux_aperture = dl.CompoundAperture({
     "Pupil": HubblePupil(),
-    "Nicmos": NicmosColdMask(-0.025, -0.025)}
+    "Nicmos": NicmosColdMask(-0.06788225 / 2., 0.06788225 / 2.)})
 
-test = dl.CompoundAperture(apertures)
+coords = dl.utils.get_pixel_coordinates(512, 2.4 / 512, 0., 0.)
+aperture = dlux_aperture._aperture(coords)
 
 # +
-coords = dl.utils.get_pixel_coordinates(512, 2.4 / 512, 0., 0.)
-aperture = test._aperture(coords)
-
+plt.figure(figsize=(12, 4))
+plt.subplot(1, 2, 1)
 plt.imshow(aperture)
+plt.colorbar()
+
+plt.subplot(1, 2, 2)
+plt.imshow(pmask)
 plt.colorbar()
 plt.show()
 # -
@@ -157,13 +157,49 @@ with open("data/filters/HST_NICMOS1.F170M.dat") as filter_data:
         [[float(entry) for entry in line.strip().split(" ")] for line in filter_data])
 
 
-hubble = dl.OpticalSystem(
+# +
+transmissive_dlux_hubble = dl.OpticalSystem(
     [dl.CreateWavefront(512, 2.4, wavefront_type='Angular'), 
      dl.TransmissiveOptic(aperture),
      dl.NormaliseWavefront(),
      dl.AngularMFT(dl.utils.arcsec2rad(0.043), 128)], 
     wavels = nicmos_filter[:, 0] * 1e-9, 
     weights = nicmos_filter[:, 1])
+
+transmissive_xaosim_hubble = dl.OpticalSystem(
+    [dl.CreateWavefront(512, 2.4, wavefront_type='Angular'), 
+     dl.TransmissiveOptic(pmask),
+     dl.NormaliseWavefront(),
+     dl.AngularMFT(dl.utils.arcsec2rad(0.043), 64)], 
+    wavels = nicmos_filter[:, 0] * 1e-9, 
+    weights = nicmos_filter[:, 1])
+
+compound_dlux_hubble = dl.OpticalSystem(
+    [dl.CreateWavefront(512, 2.4, wavefront_type='Angular'), 
+     dlux_aperture,
+     dl.NormaliseWavefront(),
+     dl.AngularMFT(dl.utils.arcsec2rad(0.043), 128)], 
+    wavels = nicmos_filter[:, 0] * 1e-9, 
+    weights = nicmos_filter[:, 1])
+
+# +
+plt.figure(figsize=(12, 12))
+plt.subplot(2, 2, 1)
+plt.title("Transmissive dLux")
+plt.imshow(transmissive_dlux_hubble.propagate() ** 0.25)
+plt.colorbar()
+
+plt.subplot(2, 2, 2)
+plt.title("Transmissive xaosim")
+plt.imshow(transmissive_xaosim_hubble.propagate() ** 0.25)
+plt.colorbar()
+
+plt.subplot(2, 2, 3)
+plt.title("Compound dLux")
+plt.imshow(compound_dlux_hubble.propagate() ** 0.25)
+plt.colorbar()
+plt.show()
+# -
 
 final_psf, intermediates, layers = hubble.debug_prop((1700) * 1e-9)
 
