@@ -138,7 +138,7 @@ hubble = dl.OpticalSystem(
     [dl.CreateWavefront(512, 2.4, wavefront_type='Angular'), 
      dlux_aperture,
      dl.NormaliseWavefront(),
-     dl.AngularMFT(dl.utils.arcsec2rad(0.043), 128)], 
+     dl.AngularMFT(dl.utils.arcsec2rad(0.043), 64)], 
     wavels = nicmos_filter[:, 0] * 1e-9, 
     weights = nicmos_filter[:, 1])
 
@@ -164,7 +164,7 @@ plt.colorbar()
 
 plt.subplot(2, 2, 4)
 plt.title("Log scale")
-plt.imshow(data ** 0.25)
+plt.imshow((data / data.max() ** 0.25)
 plt.colorbar()
 plt.show()
 # -
