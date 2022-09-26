@@ -120,32 +120,9 @@ class HubblePupil(dl.CompoundAperture):
                 softening = True)}
 
 
-# +
-from xaosim.pupil import HST_NIC1 as HST
-
-PSZ = 512   # size of the array for the model
-rad = 256
-pmask = HST(PSZ, rad, ang=45) # rotated!
-# -
-
 dlux_aperture = dl.CompoundAperture({
     "Pupil": HubblePupil(),
     "Nicmos": NicmosColdMask(-0.06788225 / 2., 0.06788225 / 2.)})
-
-coords = dl.utils.get_pixel_coordinates(512, 2.4 / 512, 0., 0.)
-aperture = dlux_aperture._aperture(coords)
-
-# +
-plt.figure(figsize=(12, 4))
-plt.subplot(1, 2, 1)
-plt.imshow(aperture)
-plt.colorbar()
-
-plt.subplot(1, 2, 2)
-plt.imshow(pmask)
-plt.colorbar()
-plt.show()
-# -
 
 file_name = "data/MAST_2022-08-02T2026/HST/n9nk01010/n9nk01010_mos.fits"
 
@@ -157,64 +134,13 @@ with open("data/filters/HST_NICMOS1.F170M.dat") as filter_data:
         [[float(entry) for entry in line.strip().split(" ")] for line in filter_data])
 
 
-# +
-transmissive_dlux_hubble = dl.OpticalSystem(
-    [dl.CreateWavefront(512, 2.4, wavefront_type='Angular'), 
-     dl.TransmissiveOptic(aperture),
-     dl.NormaliseWavefront(),
-     dl.AngularMFT(dl.utils.arcsec2rad(0.043), 128)], 
-    wavels = nicmos_filter[:, 0] * 1e-9, 
-    weights = nicmos_filter[:, 1])
-
-transmissive_xaosim_hubble = dl.OpticalSystem(
-    [dl.CreateWavefront(512, 2.4, wavefront_type='Angular'), 
-     dl.TransmissiveOptic(pmask),
-     dl.NormaliseWavefront(),
-     dl.AngularMFT(dl.utils.arcsec2rad(0.043), 64)], 
-    wavels = nicmos_filter[:, 0] * 1e-9, 
-    weights = nicmos_filter[:, 1])
-
-compound_dlux_hubble = dl.OpticalSystem(
+hubble = dl.OpticalSystem(
     [dl.CreateWavefront(512, 2.4, wavefront_type='Angular'), 
      dlux_aperture,
      dl.NormaliseWavefront(),
      dl.AngularMFT(dl.utils.arcsec2rad(0.043), 128)], 
     wavels = nicmos_filter[:, 0] * 1e-9, 
     weights = nicmos_filter[:, 1])
-
-# +
-plt.figure(figsize=(12, 12))
-plt.subplot(2, 2, 1)
-plt.title("Transmissive dLux")
-plt.imshow(transmissive_dlux_hubble.propagate() ** 0.25)
-plt.colorbar()
-
-plt.subplot(2, 2, 2)
-plt.title("Transmissive xaosim")
-plt.imshow(transmissive_xaosim_hubble.propagate() ** 0.25)
-plt.colorbar()
-
-plt.subplot(2, 2, 3)
-plt.title("Compound dLux")
-plt.imshow(compound_dlux_hubble.propagate() ** 0.25)
-plt.colorbar()
-plt.show()
-# -
-
-final_psf, intermediates, layers = hubble.debug_prop((1700) * 1e-9)
-
-fig = plt.figure(figsize=(12, 10))
-for i, intermediate in enumerate(intermediates):
-    wave = intermediate["Wavefront"].wavefront_to_psf() ** 0.25
-    plt.subplot(3, 2, i + 1)
-    plt.imshow(wave)
-    plt.colorbar()
-plt.show()
-
-plt.figure(figsize=(10, 10))
-plt.imshow(final_psf ** 0.125,interpolation=None)
-plt.colorbar()
-plt.show()
 
 data = (data) / data.sum()
 
