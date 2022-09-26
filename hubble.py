@@ -165,14 +165,6 @@ hubble = dl.OpticalSystem(
     wavels = nicmos_filter[:, 0] * 1e-9, 
     weights = nicmos_filter[:, 1])
 
-wave = dl.CreateWavefront(512, 2.4, wavefront_type='Angular')(
-    {"wavelength": 1.7e-6, "offset": [0., 0.]})["Wavefront"]
-hubble_aperture = NicmosColdMask(0., 0.)({"Wavefront": wave})["Wavefront"]
-
-plt.imshow((hubble_aperture.amplitude ** 0.5)[0])
-plt.colorbar()
-plt.show()
-
 final_psf, intermediates, layers = hubble.debug_prop((1700) * 1e-9)
 
 fig = plt.figure(figsize=(12, 10))
@@ -294,88 +286,3 @@ aperture = models_out[-1].layers[1]._aperture(dl.utils.get_pixel_coordinates(102
 plt.imshow(aperture)
 plt.colorbar()
 plt.show()
-
-# +
-# So this is going to be the bottom of the spectrum PSF followed by the top of the 
-# spectrum PSF
-# -
-
-bottom_spectrum_hubble = dl.OpticalSystem(
-    [dl.CreateWavefront(512, 2.4, wavefront_type='Angular'), 
-     dl.CompoundAperture(apertures), 
-     dl.NormaliseWavefront(),
-     dl.AngularMFT(dl.utils.arcsec2rad(0.043), 64)], 
-    wavels = [nicmos_filter[50, 0] * 1e-9])
-
-# +
-psf = bottom_spectrum_hubble.propagate()
-plt.figure(figsize=(10, 10))
-plt.subplot(2, 2, 1)
-plt.title("Linear scale")
-plt.imshow(psf)
-plt.colorbar()
-
-plt.subplot(2, 2, 2)
-plt.title("Log scale")
-plt.imshow(psf ** 0.25)
-plt.colorbar()
-
-plt.subplot(2, 2, 3)
-plt.title("Linear scale")
-plt.imshow(data)
-plt.colorbar()
-
-plt.subplot(2, 2, 4)
-plt.title("Log scale")
-plt.imshow(data ** 0.25)
-plt.colorbar()
-plt.show()
-# -
-
-top_spectrum_hubble = dl.OpticalSystem(
-    [dl.CreateWavefront(512, 2.4, wavefront_type='Angular'), 
-     dl.CompoundAperture(apertures), 
-     dl.NormaliseWavefront(),
-     dl.AngularMFT(dl.utils.arcsec2rad(0.043), 64)], 
-    wavels = [nicmos_filter[-50, 0] * 1e-9])
-
-# +
-psf = top_spectrum_hubble.propagate()
-plt.figure(figsize=(10, 10))
-plt.subplot(2, 2, 1)
-plt.title("Linear scale")
-plt.imshow(psf)
-plt.colorbar()
-
-plt.subplot(2, 2, 2)
-plt.title("Log scale")
-plt.imshow(psf ** 0.25)
-plt.colorbar()
-
-plt.subplot(2, 2, 3)
-plt.title("Linear scale")
-plt.imshow(data)
-plt.colorbar()
-
-plt.subplot(2, 2, 4)
-plt.title("Log scale")
-plt.imshow(data ** 0.25)
-plt.colorbar()
-plt.show()
-
-# +
-# This is where I attempt to get the Fresnel PSF and then from there I will attempt
-# some HMC
-# -
-
-hubble = dl.OpticalSystem(
-    [dl.CreateWavefront(512, 2.4, wavefront_type='FarFieldFresnel'), 
-     dl.EvenUniformSpider(0., 0., 4, 0.02, np.pi / 4, softening=True),
-     dl.CircularAperture(0., 0., 1.2, occulting=False, softening=True),
-     dl.AngularMFT(dl.utils.arcsec2rad(0.043), 64)], 
-    wavels = nicmos_filter[:, 0] * 1e-9, 
-    weights = nicmos_filter[:, 1])
-
-final_psf, intermediates, layers = hubble.debug_prop(1.7e-6)
-
-
