@@ -134,11 +134,15 @@ with open("data/filters/HST_NICMOS1.F170M.dat") as filter_data:
         [[float(entry) for entry in line.strip().split(" ")] for line in filter_data])
 
 
+basis = dl.utils.zernike_basis(5, 512, outside=0.)
+coeffs = 2e-8*jax.random.normal(jax.random.PRNGKey(0), [len(basis)])
+
 hubble = dl.OpticalSystem(
     [dl.CreateWavefront(512, 2.4, wavefront_type='Angular'), 
      dlux_aperture,
      dl.NormaliseWavefront(),
-     dl.AngularMFT(dl.utils.arcsec2rad(0.043), 128)], 
+     dl.ApplyBasisOPD(basis, coeffs),
+     dl.AngularMFT(dl.utils.arcsec2rad(0.043), 64)], 
     wavels = nicmos_filter[:, 0] * 1e-9, 
     weights = nicmos_filter[:, 1])
 
@@ -164,15 +168,16 @@ plt.colorbar()
 
 plt.subplot(2, 2, 4)
 plt.title("Log scale")
-plt.imshow(data ** 0.25)
+plt.imshow((data / data.max()) ** 0.25)
 plt.colorbar()
 plt.show()
 # -
 
 filter_spec = eqx.tree_at(lambda tree: 
         (tree.layers[1]["Nicmos"].delta_x_offset, 
-        tree.layers[1]["Nicmos"].delta_y_offset),
-    jax.tree_map(lambda _: False, hubble), (True, True))
+        tree.layers[1]["Nicmos"].delta_y_offset,
+        tree.layers[3].coeffs),
+    jax.tree_map(lambda _: False, hubble), (True, True, True))
 
 
 @eqx.filter_jit
