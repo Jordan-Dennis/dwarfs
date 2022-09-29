@@ -137,15 +137,18 @@ target_coeffs = 1e-7 * jax.random.normal(jax.random.PRNGKey(0), [len(basis)])
 initial_coeffs = 1e-7 * jax.random.normal(jax.random.PRNGKey(1), [len(basis)])
 
 target_positions = 1e-06 * jax.random.normal(jax.random.PRNGKey(3), (2, 2))
-initial_positions = 1e-06 * jax.random.uniform(jax.random.PRNGKey(4), (2, 2))
+initial_positions = jax.numpy.array([[0., 0.], [0., 0.]])
 target_fluxes = 1e7 * jax.random.uniform(jax.random.PRNGKey(5), (2, 1))
-initial_fluxes = 1e7 * jax.random.uniform(jax.random.PRNGKey(4), (2, 1))
+initial_fluxes = 1e7 * jax.numpy.array([1., 1.])
+
+x_offset = -0.06788225 / 2.
+y_offset = 0.06788225 / 2.
 
 target_hubble = dl.OpticalSystem(
     [dl.CreateWavefront(256, 2.4, wavefront_type='Angular'),
      dl.TiltWavefront(),
      dl.CompoundAperture({"Hubble": HubblePupil(), 
-                          "Nicmos": NicmosColdMask(-0.06788225 / 2., 0.06788225 / 2.)}),
+                          "Nicmos": NicmosColdMask(x_offset, y_offset)}),
      dl.NormaliseWavefront(),
      dl.ApplyBasisOPD(basis, target_coeffs),
      dl.AngularMFT(dl.utils.arcsec2rad(0.043), 64)], 
@@ -154,63 +157,28 @@ target_hubble = dl.OpticalSystem(
     positions = target_positions,
     fluxes = target_fluxes)
 
-np.sqrt(np.sum((target_positions[0] - target_positions[1]) ** 2))
-
-x = target_positions[0][0] - target_positions[1][0]
-
-y = target_positions[0][1] - target_positions[1][1]
-
-180 / np.pi * (np.arctan2(y, x))
-
-target_positions[0]
-
-target_psf = target_hubble.propagate()
-
-plt.imshow(target_psf ** 0.25)
-plt.colorbar()
-
-help(jax.random.normal)
-
-vmax
-
-positions
-
+# +
 hubble = dl.OpticalSystem(
     [dl.CreateWavefront(256, 2.4, wavefront_type='Angular'), 
+     dl.TiltWavefront(),
      dl.CompoundAperture({"Hubble": HubblePupil(), "Nicmos": NicmosColdMask(0., 0.)}),
      dl.NormaliseWavefront(),
      dl.ApplyBasisOPD(basis, initial_coeffs),
      dl.AngularMFT(dl.utils.arcsec2rad(0.043), 64)], 
     wavels = nicmos_filter[:, 0] * 1e-9, 
     weights = nicmos_filter[:, 1],
-    positions = positions,
-    fluxes = fluxes)
+    positions = initial_positions,
+    fluxes = initial_fluxes)
 
-vmin = -target_hubble.layers[-1].pixel_scale_out * 64 / 2
-vmax = -vmin
-
-psf = hubble.propagate()
-
-plt.imshow(psf)
-plt.colorbar()
-plt.show()
-
-# +
 # Define path dict and paths
-path_dict = {'zern' : ['layers', 3, 'coeffs'],
-             'x'    : ['layers', 1, 'apertures', 'Nicmos', 'delta_x_offset'],
-             'y'    : ['layers', 1, 'apertures', 'Nicmos', 'delta_y_offset']}
-paths = ['zern', 'x', 'y']
-
-# Update hubble to initialise
-hubble = hubble\
-    .update_leaves(['zern'], [initial_coeffs], path_dict=path_dict)\
-    .update_leaves(['x', 'y'], [0., 0.], path_dict=path_dict)
+path_dict = {'zern': ['layers', -2, 'coeffs'],
+             'x_offset': ['layers', 2, 'apertures', 'Nicmos', 'delta_x_offset'],
+             'y_offset': ['layers', 2, 'apertures', 'Nicmos', 'delta_y_offset'],
+             'positions': ['positions'],
+             'fluxes': ['fluxes']}
+paths = ['zern', 'x_offset', 'y_offset', 'positions', 'fluxes']
 
 filter_spec = hubble.get_filter_spec(paths, path_dict=path_dict)
-
-
-# -
 
 @eqx.filter_jit
 @eqx.filter_value_and_grad(arg=filter_spec)
@@ -218,13 +186,10 @@ def loss_func(model, target_psf):
     out = model.propagate()
     return np.sum((target_psf - out) ** 2)
 
-
-# %%timeit
 loss, grads = loss_func(hubble, target_psf)
 
-# +
-groups = [['x', 'y'], 'zern']
-optimisers = [optax.adam(1e-2), optax.adam(1e-7)]
+groups = [['x_offset', 'y_offset'], 'zern', 'positions', 'fluxes']
+optimisers = [optax.adam(1e-12), optax.adam(1e-12), optax.adam(1e-6), optax.adam(1e-12)]
 optim = hubble.get_optimiser(groups, optimisers, path_dict=path_dict)
 opt_state = optim.init(hubble)
 
@@ -260,12 +225,12 @@ current_cmap.set_bad(color="black")
 plt.figure(figsize=(12, 9))
 plt.subplot(3, 3, 1)
 plt.title("Log scale")
-plt.imshow(psf ** 0.25)
+plt.imshow(target_psf ** 0.25)
 plt.colorbar()
 
 plt.subplot(3, 3, 2)
 plt.title("Log scale")
-plt.imshow(target_psf ** 0.25)
+plt.imshow(psf ** 0.25)
 plt.colorbar()
 
 plt.subplot(3, 3, 3)
@@ -274,7 +239,7 @@ plt.imshow((psf - target_psf))
 plt.colorbar()
 
 target_aperture = target_hubble\
-    .layers[1]\
+    .layers[2]\
     ._aperture(coordinates)
 plt.subplot(3, 3, 4)
 plt.title("Input Aperture")
@@ -282,7 +247,7 @@ plt.imshow(target_aperture)
 plt.colorbar()
 
 aperture = models_out[-1]\
-    .layers[1]\
+    .layers[2]\
     ._aperture(coordinates)
 plt.subplot(3, 3, 5)
 plt.title("Recovered Aperture")
@@ -295,7 +260,7 @@ plt.imshow(target_aperture - aperture)
 plt.colorbar()
 
 target_aberrations = target_hubble\
-    .layers[3]\
+    .layers[4]\
     .get_total_opd()\
     .at[target_aperture < 0.999]\
     .set(np.nan)
@@ -305,7 +270,7 @@ plt.imshow(target_aperture * target_aberrations)
 plt.colorbar()
 
 aberrations = models_out[-1]\
-    .layers[3]\
+    .layers[4]\
     .get_total_opd()\
     .at[aperture < 0.999]\
     .set(np.nan)
@@ -318,12 +283,44 @@ plt.subplot(3, 3, 9)
 plt.title("Aberration Residuals")
 plt.imshow(target_aberrations - aberrations)
 plt.colorbar()
+plt.savefig("../report_plan/binary_gradient_descent.pdf")
+plt.show()
+# -
+
+x_resid = x_offset - np.array([m.get_leaf('x_offset', path_dict=path_dict) 
+                               for m in models_out])
+y_resid = y_offset - np.array([m.get_leaf('y_offset', path_dict=path_dict) 
+                               for m in models_out])
+pos_resid = target_positions - np.array([m.get_leaf("positions", path_dict=path_dict) 
+                                         for m in models_out])
+coeff_resid = target_coeffs - np.array([m.get_leaf("zern", path_dict=path_dict) 
+                                        for m in models_out])
+
+# +
+plt.figure(figsize=(10, 4))
+plt.subplot(1, 3, 1)
+plt.title("x offset")
+plt.plot(x_resid)
+plt.plot(y_resid)
+
+plt.subplot(1, 3, 2)
+plt.title("Position")
+plt.plot(pos_resid[:, 0, 0])
+plt.plot(pos_resid[:, 0, 1])
+plt.plot(pos_resid[:, 1, 0])
+plt.plot(pos_resid[:, 1, 1])
+
+plt.subplot(1, 3, 3)
+plt.title("Coeffs")
+plt.plot(coeff_resid[:, 0])
+plt.plot(coeff_resid[:, 1])
+plt.plot(coeff_resid[:, 2])
+plt.plot(coeff_resid[:, 3])
+plt.plot(coeff_resid[:, 4])
 plt.show()
 # -
 
 import numpyro
 
-dl.PointSource()
 
-
-
+def binary_model(target_psf)
