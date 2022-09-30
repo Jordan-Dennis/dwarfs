@@ -363,12 +363,6 @@ plt.plot(flux_resid[0])
 plt.plot(flux_resid[1])
 plt.show()
 # -
-dl.BinarySource([0., 0.], 1e-7, 2.)
-
-help(dl.Spectrum)
-
-spectrum = np.tile(nicmos_filter, (2, 1, 1))
-
-spectrum[0]
+spectrum = np.tile(nicmos_filter, (2, 1, 1)).at[:, :, 1].set(1.)
 
 dl.CombinedSpectrum()
