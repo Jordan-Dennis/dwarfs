@@ -1,241 +1,362 @@
-import jax,
-import jax.numpy as np,
-import jax.random as jr,
-import numpyro as npy,
-import numpyro.distributions as dist,
-import os,
+import jax
+import jax.numpy as np
+import jax.random as jr
+import numpyro as npy
+import numpyro.distributions as dist
+import os
 os.environ["XLA_FLAGS"] = '--xla_force_host_platform_device_count=2'
 
 import equinox as eqx
-import optax,
-import dLux as dl,
-import matplotlib.pyplot as plt,
-import chainconsumer as cc,
-%matplotlib inline,
-plt.figure(),
+import optax
+import dLux as dl
+import matplotlib.pyplot as plt
+import chainconsumer as cc
+import jupyterthemes.jtplot as jtplot
+
+# %matplotlib inline
 plt.rcParams['image.cmap'] = 'inferno'
 plt.rcParams["font.family"] = 'serif'
 plt.rcParams["text.usetex"] = 'true'
 plt.rcParams['figure.dpi'] = 120
-nwavels = 3,
-wavels = np.linspace(400e-9, 500e-9, nwavels),
-wavelengths = [wavels, wavels],
-weights = [np.ones(nwavels), np.linspace(0.5, 1, nwavels)],
-combined_spectrum = dl.CombinedSpectrum(wavelengths, weights),
-,
+jtplot.style("oceans16")
+
+
+class NicmosColdMask(dl.CompoundAperture):
+    x_offset: float
+    y_offset: float
+    mirror_pad_radius: float
+    mirror_pad_angles: float
+    relative_position: dict
+        
+    def __init__(self, x_offset: float, y_offset: float):
+        self.x_offset = np.asarray(x_offset).astype(float)
+        self.y_offset = np.asarray(y_offset).astype(float)
+        self.mirror_pad_radius = np.asarray(1.070652).astype(float)
+        self.mirror_pad_angles = np.array([-2*np.pi/3, 0., 2*np.pi/3]) + np.pi/4
+        self.relative_position = {
+            "Outer": (0., 0.),
+            "Obstruction": (0., 0.),
+            "Spider": (0., 0.),
+            "Mirror Pad 1": (self.mirror_pad_radius*np.cos(self.mirror_pad_angles[0]),
+                             self.mirror_pad_radius*np.sin(self.mirror_pad_angles[0])),
+            "Mirror Pad 2": (self.mirror_pad_radius*np.cos(self.mirror_pad_angles[1]),
+                             self.mirror_pad_radius*np.sin(self.mirror_pad_angles[1])),
+            "Mirror Pad 3": (self.mirror_pad_radius*np.cos(self.mirror_pad_angles[2]),
+                             self.mirror_pad_radius*np.sin(self.mirror_pad_angles[2]))
+        }
+        self.apertures = {
+            "Outer": dl.CircularAperture(
+                x_offset = x_offset,
+                y_offset = y_offset,
+                radius = 1.2,
+                occulting = False,
+                softening = True),
+            "Obstruction": dl.CircularAperture(
+                x_offset = x_offset,
+                y_offset = y_offset,
+                radius = 0.4464,
+                occulting = True,
+                softening = True),
+            "Spider": dl.EvenUniformSpider(
+                x_offset = x_offset,
+                y_offset = y_offset,
+                number_of_struts = 4,
+                width_of_struts = 0.0804,
+                rotation = 0.785398163,
+                softening = True),
+            "Mirror Pad 1": dl.SquareAperture(
+                x_offset = 1.070652 * np.cos(np.pi / 4) + x_offset, 
+                y_offset = 1.070652 * np.sin(np.pi / 4) + y_offset,
+                theta = - np.pi / 4,
+                width = 0.156,
+                occulting = True,
+                softening = True),
+            "Mirror Pad 2": dl.SquareAperture(
+                x_offset = 1.070652 * np.cos(np.pi / 4 + 2 * np.pi / 3) + x_offset, 
+                y_offset = 1.070652 * np.sin(np.pi / 4 + 2 * np.pi / 3) + y_offset,
+                theta = - np.pi / 4 + np.pi / 3,
+                width = 0.156,
+                occulting = True, 
+                softening = True),
+            "Mirror Pad 3": dl.SquareAperture(
+                x_offset = 1.070652 * np.cos(np.pi / 4 - 2 * np.pi / 3) + x_offset, 
+                y_offset = 1.070652 * np.sin(np.pi / 4 - 2 * np.pi / 3) + y_offset,
+                theta = - np.pi / 3 - np.pi / 4,
+                width = 0.156,
+                occulting = True,
+                softening = True)}
+    
+    
+    def set_offset(self, x_offset: float, y_offset: float):
+        x_offset = np.asarray(x_offset).astype(float)
+        y_offset = np.asarray(y_offset).astype(float)
+        
+        for aperture in self.apertures:
+            new_x_offset = self.relative_position[aperture][0] + x_offset
+            new_y_offset = self.relative_position[aperture][1] + y_offset
+            new_aperture = self\
+                .apertures[aperture]\
+                .set_x_offset(new_x_offset)\
+                .set_y_offset(new_y_offset)
+            self.apertures[aperture] = new_aperture          
+            
+        return eqx.tree_at(
+            lambda aperture: (aperture.x_offset, aperture.y_offset), 
+            self, (x_offset, y_offset))
+    
+    def _aperture(self, coordinates: float) -> float:
+        # print(f"x_offset: {self.delta_x_offset}")
+        # print(f"y_offset: {self.delta_y_offset}")
+        updated_self = self.set_offset(self.x_offset, self.y_offset)
+        return super(NicmosColdMask, updated_self)._aperture(coordinates)
+
+
+class HubblePupil(dl.CompoundAperture):
+    def __init__(self):
+        self.apertures = {
+            "Mirror Pad 1": dl.CircularAperture( 
+                x_offset = 1.070652 * np.cos(np.pi / 4), 
+                y_offset = 1.070652 * np.sin(np.pi / 4),
+                radius = 0.078,
+                occulting = True,
+                softening = True),
+            "Mirror Pad 2": dl.CircularAperture(
+                x_offset = 1.070652 * np.cos(np.pi / 4 + 2 * np.pi / 3), 
+                y_offset = 1.070652 * np.sin(np.pi / 4 + 2 * np.pi / 3),
+                radius = 0.078,
+                occulting = True,
+                softening = False),
+            "Mirror Pad 3": dl.CircularAperture(
+                x_offset = 1.070652 * np.cos(np.pi / 4 - 2 * np.pi / 3), 
+                y_offset = 1.070652 * np.sin(np.pi / 4 - 2 * np.pi / 3),
+                radius = 0.078,
+                occulting = True,
+                softening = False),
+            "Obstruction": dl.CircularAperture(
+                x_offset = 0.0,
+                y_offset = 0.0,
+                radius = 0.396,
+                occulting = True,
+                softening = True),
+            "Aperture": dl.CircularAperture(
+                x_offset = 0.0,
+                y_offset = 0.0,
+                radius = 1.2,
+                occulting = False,
+                softening = True),
+            "Spider": dl.EvenUniformSpider( 
+                x_offset = 0.0,
+                y_offset = 0.0,
+                number_of_struts = 4,
+                width_of_struts = 0.0132 * 2.,
+                rotation = 0.785398163,
+                softening = True)}
+
+
+nwavels = 3
+wavels = np.linspace(400e-9, 500e-9, nwavels)
+wavelengths = [wavels, wavels]
+weights = [np.ones(nwavels), np.linspace(0.5, 1, nwavels)]
+combined_spectrum = dl.CombinedSpectrum(wavelengths, weights)
+
 # Create Binary Source,
-true_position = np.zeros(2),
-true_separation, true_field_angle = dl.utils.arcsec2rad(1e-1), 0,
-true_flux, true_flux_ratio = 1e5, 2,
-resolved = [False, False],
-binary_source = dl.BinarySource(true_position, true_flux, true_separation, ,
-                             true_field_angle, true_flux_ratio, ,
+true_position = np.zeros(2)
+true_separation, true_field_angle = dl.utils.arcsec2rad(1e-1), 0
+true_flux, true_flux_ratio = 1e5, 2
+resolved = [False, False]
+binary_source = dl.BinarySource(true_position, true_flux, true_separation, 
+                             true_field_angle, true_flux_ratio, 
                              combined_spectrum, resolved, name="Binary")
-# Construct Optical system,
-wf_npix = 128,
-det_npix = 128,
-,
+
+# Construct Optical system
+wf_npix = 128
+det_npix = 128
+
 # Zernike aberrations,
-basis = dl.utils.zernike_basis(10, npix=wf_npix)[3:] * 1e-9,
-true_coeffs = jr.normal(jr.PRNGKey(0), (basis.shape[0],)),
-,
+basis = dl.utils.zernike_basis(6, npix=wf_npix)[3:] * 1e-9
+true_coeffs = jr.normal(jr.PRNGKey(0), (basis.shape[0],))
+
 # Construct optical layers,
-true_pixel_scale = dl.utils.arcsec2rad(5e-3),
-layers = [dl.CreateWavefront(wf_npix, 1),,
-          dl.TiltWavefront(),,
-          dl.CompoundAperture([0.5]),,
-          dl.ApplyBasisOPD(basis, true_coeffs),,
-          dl.NormaliseWavefront(),,
-          dl.AngularMFT(true_pixel_scale, det_npix)],
-,
+true_pixel_scale = dl.utils.arcsec2rad(5e-3)
+layers = [dl.CreateWavefront(wf_npix, 1),
+          dl.TiltWavefront(),
+          dl.CompoundAperture({"Hubble": HubblePupil(), "Nicmos": NicmosColdMask(0., 0.)}),
+          dl.ApplyBasisOPD(basis, true_coeffs),
+          dl.NormaliseWavefront(),
+          dl.AngularMFT(true_pixel_scale, det_npix)]
+
 # Construct Detector,
-true_bg = 10.,
-true_pixel_response = 1 + 0.05*jr.normal(jr.PRNGKey(0), (det_npix, det_npix)),
-detector_layers = [,
-    dl.AddConstant(true_bg),,
+true_bg = 10.
+true_pixel_response = 1 + 0.05*jr.normal(jr.PRNGKey(0), (det_npix, det_npix))
+detector_layers = [
+    dl.AddConstant(true_bg),
     # dl.ApplyPixelResponse(true_pixel_response),
-],
-,
+]
+
 # Construct Telescope,
 telescope = dl.Telescope(dl.Optics(layers), 
                          dl.Scene([binary_source]),
                          detector=dl.Detector(detector_layers))
+
+# +
 ## Gerenate psf,
-psf = telescope.model_scene(),
-psf_photon = jr.poisson(jr.PRNGKey(0), psf),
-bg_noise = true_bg + jr.normal(jr.PRNGKey(0), psf_photon.shape),
-image = psf_photon+bg_noise,
-data = image.flatten(),
-,
-plt.figure(figsize=(15, 4)),
-plt.subplot(1, 3, 1),
-plt.title(\"PSF\"),
-plt.imshow(psf),
-plt.colorbar(),
-,
+psf = telescope.model_scene()
+psf_photon = jr.poisson(jr.PRNGKey(0), psf)
+bg_noise = true_bg + jr.normal(jr.PRNGKey(0), psf_photon.shape)
+image = psf_photon+bg_noise
+data = image.flatten()
+
+plt.figure(figsize=(15, 4))
+plt.subplot(1, 3, 1)
+plt.title("PSF")
+plt.imshow(psf)
+plt.colorbar()
+
 plt.subplot(1, 3, 2),
-plt.title(\"PSF + Photon\"),
-plt.imshow(psf_photon),
-plt.colorbar(),
-,
-plt.subplot(1, 3, 3),
-plt.title(\"Data\"),
-plt.imshow(image),
-plt.colorbar(),
-plt.show()"
----,
-,
-# Inference with Numpyro,
-,
-Awesome, now we are going to try and infer these parameters using an MCMC algortihm. There a few different parameters we want to learn:,
-,
-##  Binary parameters,
- - The (x,y) mean position (2 parameters),
- - The separation (1 parameter),
- - The position angle (1 parameter),
- - The mean flux (1 parameter),
- - The contrast ratio (1 parameter),
- ,
-## Optical parameters,
- - The zernike aberration coefficients (7 parameters),
- ,
-## Detector parameters,
- - The mean detector noise (1 parameter),
- ,
-This gives us a total of 14 parameters, which is quite high dimensional for regular MCMC algortihms.,
-,
----,
-,
-,
-In order to be able to refer to these individual parameters, we will construct a parameter dictionary. If you haven't seen this before check out [this tutorial!](https://louisdesdoigts.github.io/dLux/notebooks/PyTree_interface/)"
+plt.title("PSF + Photon")
+plt.imshow(psf_photon)
+plt.colorbar()
+
+plt.subplot(1, 3, 3)
+plt.title("Data")
+plt.imshow(image)
+plt.colorbar()
+plt.show()
+# -
+
 # Lets define our path dict to simplify accessing these attributes,
-path_dict = {,
-    'pos'    : ['scene',    'sources', 'Binary',             'position'       ],,
-    'sep'    : ['scene',    'sources', 'Binary',             'separation'     ],,
-    'angle'  : ['scene',    'sources', 'Binary',             'field_angle'    ],,
-    'flx'    : ['scene',    'sources', 'Binary',             'flux'           ],,
-    'cont'   : ['scene',    'sources', 'Binary',             'flux_ratio'     ],,
-    'zern'   : ['optics',   'layers',  'Apply Basis OPD',    'coeffs'         ],,
-    'pscale' : ['optics',   'layers',  'AngularMFT',         'pixel_scale_out'],,
-    'bg'     : ['detector', 'layers',  'AddConstant',        'value'          ],,
-    'FF'     : ['detector', 'layers',  'ApplyPixelResponse', 'pixel_response' ],,
-    }"
-Now we construct our Numpyro sampling function. In this function we need to define priors distribution variables for our parameters, and feed them (along with the corresponsing path to that parameter in the model) into the .update_and_model() function. This allows for Numpyro to simulatensly sample the posterior for all of the parameters bu taking advantage of the differentiable nature of these models. ,
-,
-With these parameters we define a 'plate' which defines our data, using a Possion likelihood since this is our dominant noise source."
-def psf_model(data, model, path_dict=None):,
-    \"\"\",
-    Define the numpyro function,
-    \"\"\",
+path_dict = {
+    'pos'    : ['scene',    'sources', 'Binary',             'position'       ],
+    'sep'    : ['scene',    'sources', 'Binary',             'separation'     ],
+    'angle'  : ['scene',    'sources', 'Binary',             'field_angle'    ],
+    'flx'    : ['scene',    'sources', 'Binary',             'flux'           ],
+    'cont'   : ['scene',    'sources', 'Binary',             'flux_ratio'     ],
+    'zern'   : ['optics',   'layers',  'Apply Basis OPD',    'coeffs'         ],
+    'pscale' : ['optics',   'layers',  'AngularMFT',         'pixel_scale_out'],
+    'bg'     : ['detector', 'layers',  'AddConstant',        'value'          ],
+    'FF'     : ['detector', 'layers',  'ApplyPixelResponse', 'pixel_response' ]
+    }
+
+
+def psf_model(data, model, path_dict=None):
     # Define empty paths and values lists to append to,
-    paths, values = [], [],
-    ,
-    # Position,
-    position_pix = npy.sample(\"position_pix\", dist.Uniform(-10, 10), sample_shape=(2,)),
-    position     = npy.deterministic('position', position_pix*true_pixel_scale),
-    paths.append('pos'), values.append(position),
-    ,
-    # Separation,
-    sep_min = true_separation - 10*true_pixel_scale,
-    sep_max = true_separation + 10*true_pixel_scale,
-    separation_log = npy.sample(\"log_separation\", dist.Uniform(np.log10(sep_min), np.log10(sep_max))),
-    separation     = npy.deterministic('separation', 10**(separation_log)),
-    paths.append('sep'), values.append(separation),
-    ,
+    paths, values = [], []
+    
+    # Position
+    position_pix = npy.sample("position_pix", dist.Uniform(-10, 10), sample_shape=(2,))
+    position     = npy.deterministic('position', position_pix * true_pixel_scale)
+    paths.append('pos'), values.append(position)
+    
+    # Separation
+    sep_min = true_separation - 10*true_pixel_scale
+    sep_max = true_separation + 10*true_pixel_scale
+    separation_log = npy.sample("log_separation", dist.Uniform(np.log10(sep_min), np.log10(sep_max)))
+    separation     = npy.deterministic('separation', 10**(separation_log))
+    paths.append('sep'), values.append(separation)
+    
     # Field Angle (Position Angle),
-    theta_x = npy.sample(\"theta_x\", dist.Normal(0, 1)),
-    theta_y = npy.sample(\"theta_y\", dist.Normal(0, 1)),
-    field_angle = npy.deterministic('field_angle', np.arctan2(theta_y, theta_x)),
-    paths.append('angle'), values.append(field_angle),
-    ,
+    theta_x = npy.sample("theta_x", dist.Normal(0, 1))
+    theta_y = npy.sample("theta_y", dist.Normal(0, 1))
+    field_angle = npy.deterministic('field_angle', np.arctan2(theta_y, theta_x))
+    paths.append('angle'), values.append(field_angle)
+    
     # Flux,
-    flux_log = npy.sample(\"log_flux\", dist.Uniform(4, 8)),
-    flux     = npy.deterministic('flux', 10**flux_log),
-    paths.append('flx'), values.append(flux),
-    ,
+    flux_log = npy.sample("log_flux", dist.Uniform(4, 8))
+    flux     = npy.deterministic('flux', 10**flux_log)
+    paths.append('flx'), values.append(flux)
+    
     # Flux ratio,
-    flux_ratio_log = npy.sample(\"log_flux_ratio\", dist.Uniform(0, 4)),
-    flux_ratio     = npy.deterministic('flux_ratio', 10**flux_ratio_log),
-    paths.append('cont'), values.append(flux_ratio),
-    ,
-    # Zernikes,
-    coeffs = npy.sample(\"coeffs\", dist.Normal(0, 1), sample_shape=true_coeffs.shape),
-    paths.append('zern'), values.append(coeffs),
-    ,
+    flux_ratio_log = npy.sample("log_flux_ratio", dist.Uniform(0, 4))
+    flux_ratio     = npy.deterministic('flux_ratio', 10**flux_ratio_log)
+    paths.append('cont'), values.append(flux_ratio)
+    
+    # Zernikes
+    coeffs = npy.sample("coeffs", dist.Normal(0, 1), sample_shape=true_coeffs.shape)
+    paths.append('zern'), values.append(coeffs)
+    
     # We comment this out here becuase it breaks numpyro.render_model(),
     # # Plate scale,
     # pscale_raw = npy.sample(\"pixel_scale_raw\", dist.Uniform(0.8, 1.2)),
     # pscale     = npy.deterministic('pixel_scale', true_pixel_scale * pscale_raw),
     # paths.append('pscale'), values.append(pscale),
-    ,
-    # Background,
-    bg = npy.sample(\"bg\", dist.Uniform(5, 15)),
-    paths.append('bg'), values.append(bg),
-,
-    with npy.plate(\"data\", len(data)):,
-        poisson_model = dist.Poisson(model.update_and_model(,
-            \"model_image\", paths, values, path_dict=path_dict, flatten=True)),
-        return npy.sample(\"psf\", poisson_model, obs=data)"
-sampler = npy.infer.MCMC(,
-    npy.infer.NUTS(psf_model),    ,
-    num_warmup=1000,,
-    num_samples=2000,,
-    num_chains=jax.device_count(),,
-    progress_bar=True,,
-),
-%time sampler.run(jr.PRNGKey(0), data, telescope, path_dict=path_dict)"
-sampler.print_summary(),
-values_out = sampler.get_samples()"
-def make_dict(dict_in, truth=False):,
-    \"\"\",
-    Just a convenience formatting function to latexise parameter names,
-    for plotting,
-    \"\"\",
-    znames = ['Focus', 'Astig45', 'Astig0', 'ComaY', 'ComaX', 'TfoilY', 'TfoilX'],
-    pos_names = ['Pos$_x$', 'Pos$_y$'],
-    name_dict = {'separation': 'r', ,
-                 'field_angle': r'$\\phi$',,
-                 'flux_ratio': 'Contrast', ,
-                 'flux':  r'$\\overline{flux}$',,
-                 'bg': '$\\mu_{BG}$', ,
-                 'bg_var': '$\\sigma_{BG}$',,
-                 'pixel_scale':  'pixscale'},
-    ,
-    dict_out = {},
-    keys = list(dict_in.keys()),
-    for i in range(len(keys)):,
-        key = keys[i],
+    
+    # Background
+    bg = npy.sample("bg", dist.Uniform(5, 15))
+    paths.append('bg'), values.append(bg)
+
+    with npy.plate("data", len(data)):
+        poisson_model = dist.Poisson(model.update_and_model(
+            "model_image", paths, values, path_dict=path_dict, flatten=True))
+    
+    return npy.sample("psf", poisson_model, obs=data)
+
+
+sampler = npy.infer.MCMC(
+    npy.infer.NUTS(psf_model),    
+    num_warmup=1000,
+    num_samples=2000,
+    num_chains=jax.device_count(),
+    progress_bar=True)
+
+sampler.run(jr.PRNGKey(0), data, telescope, path_dict=path_dict)
+
+values_out = sampler.get_samples()
+
+
+def make_dict(dict_in, truth=False):
+    znames = ['Focus', 'Astig45', 'Astig0', 'ComaY', 'ComaX', 'TfoilY', 'TfoilX']
+    pos_names = ['Pos$_x$', 'Pos$_y$']
+    name_dict = {'separation': 'r', 
+                 'field_angle': r'$\phi$',
+                 'flux_ratio': 'Contrast', 
+                 'flux':  r'$\overline{flux}$',
+                 'bg': r'$\mu_{BG}$', 
+                 'bg_var': r'$\sigma_{BG}$',
+                 'pixel_scale':  'pixscale'}
+    
+    dict_out = {}
+    keys = list(dict_in.keys())
+    for i in range(len(keys)):
+        key = keys[i]
         if 'latent' in key or 'log' in key or 'theta' in key or '_pix' in key or '_raw' in key:# or key == 'bg':,
-            continue,
-        item = dict_in[key],
-        if key == 'position':,
-            for j in range(item.shape[-1]):,
-                dict_out[pos_names[j]] = item[j] if truth else item[:, j],
-                    ,
-        elif key == 'coeffs':,
-            for j in range(item.shape[-1]):,
-                dict_out[znames[j]] = item[j] if truth else item[:, j],
-        else:,
-            dict_out[name_dict[key]] = item,
-    ,
-    # Now re-order for nicer plotting,
-    order = ['r', r'$\\phi$', 'Pos$_x$', 'Pos$_y$', r'$\\overline{flux}$', 'Contrast', '$\\\\mu_{BG}$', 'Focus', 'Astig45', 'Astig0', 'ComaY', 'ComaX', 'TfoilY', 'TfoilX'],
-    new_dict = {},
-    for key in order:,
-        new_dict[key] = dict_out[key],
-    return new_dict"
+            continue
+        item = dict_in[key]
+        if key == 'position':
+            for j in range(item.shape[-1]):
+                dict_out[pos_names[j]] = item[j] if truth else item[:, j]
+                    
+        elif key == 'coeffs':
+            for j in range(item.shape[-1]):
+                dict_out[znames[j]] = item[j] if truth else item[:, j]
+        else:
+            dict_out[name_dict[key]] = item
+
+    # Now re-order for nicer plotting
+    order = ['r', r'$\phi$', 'Pos$_x$', 
+             'Pos$_y$', r'$\overline{flux}$', 
+             'Contrast', r'$\mu_{BG}$', 'Focus', 
+             'Astig45', 'Astig0', 'ComaY', 'ComaX', 
+             'TfoilY', 'TfoilX']
+    
+    new_dict = {}
+    for key in order:
+        new_dict[key] = dict_out[key]
+    return new_dict
+
+
 # Format chains for plotting,
-truth_dict = {'bg':          true_bg,          'coeffs':   true_coeffs, ,
-              'field_angle': true_field_angle, 'flux':     true_flux, ,
-              'flux_ratio':  true_flux_ratio,  'position': true_position, ,
-              'separation':  true_separation,  'bg_var':   1.,,
-              'pixel_scale': true_pixel_scale},
-,
-truth_dict_in = make_dict(truth_dict, truth=True),
-chain_dict = make_dict(values_out)"
-chain = cc.ChainConsumer(),
-chain.add_chain(chain_dict),
-chain.configure(serif=True, shade=True, bar_shade=True, shade_alpha=0.2, spacing=1., max_ticks=3),
-fig = chain.plotter.plot(truth=truth_dict_in),
-fig.set_size_inches((15,15));,
-fig.savefig('hmc', dpi=200, facecolor='w')"
+truth_dict = {'bg':          true_bg,          'coeffs':   true_coeffs, 
+              'field_angle': true_field_angle, 'flux':     true_flux, 
+              'flux_ratio':  true_flux_ratio,  'position': true_position, 
+              'separation':  true_separation,  'bg_var':   1.,
+              'pixel_scale': true_pixel_scale}
+
+truth_dict_in = make_dict(truth_dict, truth=True)
+chain_dict = make_dict(values_out)
+chain = cc.ChainConsumer()
+chain.add_chain(chain_dict)
+chain.configure(serif=True, shade=True, bar_shade=True, 
+                shade_alpha=0.2, spacing=1., max_ticks=3)
+fig = chain.plotter.plot(truth=truth_dict_in)
+fig.set_size_inches((15,15))
+fig.savefig('hmc', dpi=200, facecolor='w')
