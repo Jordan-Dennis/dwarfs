@@ -226,7 +226,7 @@ loss, grads = loss_func(hubble, target_psf)
 # Learning rates 
 # offset: 1e-3
 groups = [['x_offset', 'y_offset'], 'zern', 'positions', 'fluxes']
-optimisers = [optax.adam(0.), optax.adam(0.), optax.adam(5e-7), optax.adam(0.)]
+optimisers = [optax.adam(0.), optax.adam(0.), optax.adam(1e-7), optax.adam(0.)]
 optim = hubble.get_optimiser(groups, optimisers, path_dict=path_dict)
 opt_state = optim.init(hubble)
 
@@ -364,5 +364,29 @@ plt.plot(flux_resid[1])
 plt.show()
 # -
 spectrum = np.tile(nicmos_filter, (2, 1, 1)).at[:, :, 1].set(1.)
+wavelengths = spectrum[:, :, 0]
+weights = spectrum[:, :, 1]
 
-dl.CombinedSpectrum()
+specturm = dl.CombinedSpectrum(wavelengths, weights)
+
+position = np.mean(target_positions, axis=0)
+separation = np.sqrt(np.sum((target_positions[:, 0] - target_positions[:, 1]) ** 2))
+field_angle = np.arctan2(differences[1], differences[0])
+flux_ratio = target_fluxes[0] / target_fluxes[1]
+flux = target_fluxes.sum()
+
+target = dl.BinarySource(position, flux, separation, field_angle, flux_ratio, spectrum, [True, True])
+
+hubble_telescope = dl.Telescope
+
+help(dl.Optics)
+
+help(dl.Detector)
+
+help(dl.Telescope)
+
+dl.Filter(nicmos_filter[:, 0], nicmos_filter[:, 1])
+
+help(dl.Filter)
+
+
