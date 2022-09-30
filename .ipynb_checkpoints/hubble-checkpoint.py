@@ -1,23 +1,49 @@
 import jax 
 import tqdm
 import optax
+import warnings
 import dLux as dl
 import equinox as eqx
 import jax.numpy as np
-from astropy.io import fits
-import matplotlib.pyplot as plt
+import matplotlib as mpl
 import matplotlib.cm as cm
+import matplotlib.pyplot as plt
+
+from jupyterthemes import jtplot
+from astropy.io import fits
+
+jtplot.style("oceans16")
+warnings.filterwarnings("ignore")
+mpl.rcParams["figure.facecolor"] = 'w'
+mpl.rcParams["axes.facecolor"] = 'w'
+mpl.rcParams["savefig.facecolor"] = 'w'
 
 jax.config.update("jax_enable_x64", True)
 
 
 class NicmosColdMask(dl.CompoundAperture):
-    delta_x_offset: float
-    delta_y_offset: float
+    x_offset: float
+    y_offset: float
+    mirror_pad_radius: float
+    mirror_pad_angles: float
+    relative_position: dict
         
     def __init__(self, x_offset: float, y_offset: float):
-        self.delta_x_offset = np.asarray(x_offset).astype(float)
-        self.delta_y_offset = np.asarray(y_offset).astype(float)
+        self.x_offset = np.asarray(x_offset).astype(float)
+        self.y_offset = np.asarray(y_offset).astype(float)
+        self.mirror_pad_radius = np.asarray(1.070652).astype(float)
+        self.mirror_pad_angles = np.array([-2*np.pi/3, 0., 2*np.pi/3]) + np.pi/4
+        self.relative_position = {
+            "Outer": (0., 0.),
+            "Obstruction": (0., 0.),
+            "Spider": (0., 0.),
+            "Mirror Pad 1": (self.mirror_pad_radius*np.cos(self.mirror_pad_angles[0]),
+                             self.mirror_pad_radius*np.sin(self.mirror_pad_angles[0])),
+            "Mirror Pad 2": (self.mirror_pad_radius*np.cos(self.mirror_pad_angles[1]),
+                             self.mirror_pad_radius*np.sin(self.mirror_pad_angles[1])),
+            "Mirror Pad 3": (self.mirror_pad_radius*np.cos(self.mirror_pad_angles[2]),
+                             self.mirror_pad_radius*np.sin(self.mirror_pad_angles[2]))
+        }
         self.apertures = {
             "Outer": dl.CircularAperture(
                 x_offset = x_offset,
@@ -61,22 +87,28 @@ class NicmosColdMask(dl.CompoundAperture):
                 softening = True)}
     
     
-    def set_offset(self, delta_x_offset: float, delta_y_offset: float):
+    def set_offset(self, x_offset: float, y_offset: float):
+        x_offset = np.asarray(x_offset).astype(float)
+        y_offset = np.asarray(y_offset).astype(float)
+        
         for aperture in self.apertures:
-            self = eqx.tree_at(
-                lambda tree: (tree[aperture].x_offset, tree[aperture].y_offset),
-                self, 
-                (self[aperture].x_offset + delta_x_offset, 
-                    self[aperture].y_offset + delta_y_offset))
+            new_x_offset = self.relative_position[aperture][0] + x_offset
+            new_y_offset = self.relative_position[aperture][1] + y_offset
+            new_aperture = self\
+                .apertures[aperture]\
+                .set_x_offset(new_x_offset)\
+                .set_y_offset(new_y_offset)
+            self.apertures[aperture] = new_aperture          
             
         return eqx.tree_at(
-            lambda aperture: (aperture.delta_x_offset, aperture.delta_y_offset), 
-                self, (np.asarray(delta_x_offset).astype(float), 
-                    np.asarray(delta_y_offset).astype(float)))
+            lambda aperture: (aperture.x_offset, aperture.y_offset), 
+            self, (x_offset, y_offset))
     
     def _aperture(self, coordinates: float) -> float:
-        self = self.set_offset(self.delta_x_offset, self.delta_y_offset)
-        return super()._aperture(coordinates)
+        # print(f"x_offset: {self.delta_x_offset}")
+        # print(f"y_offset: {self.delta_y_offset}")
+        updated_self = self.set_offset(self.x_offset, self.y_offset)
+        return super(NicmosColdMask, updated_self)._aperture(coordinates)
 
 
 class HubblePupil(dl.CompoundAperture):
@@ -128,11 +160,11 @@ with open("data/filters/HST_NICMOS1.F170M.dat") as filter_data:
                 for line in filter_data])
 
 nicmos_filter = nicmos_filter\
-    .reshape(40, 20, 2)\
+    .reshape(10, 80, 2)\
     .mean(axis=1)
 
 
-basis = dl.utils.zernike_basis(5, 256, outside=0.)
+basis = dl.utils.zernike_basis(5, 128, outside=0.)
 target_coeffs = 1e-7 * jax.random.normal(jax.random.PRNGKey(0), [len(basis)])
 initial_coeffs = 1e-7 * jax.random.normal(jax.random.PRNGKey(1), [len(basis)])
 
@@ -141,11 +173,11 @@ initial_positions = jax.numpy.array([[0., 0.], [0., 0.]])
 target_fluxes = 1e7 * jax.random.uniform(jax.random.PRNGKey(5), (2, 1))
 initial_fluxes = 1e7 * jax.numpy.array([1., 1.])
 
-x_offset = -0.06788225 / 2.
-y_offset = 0.06788225 / 2.
+x_offset = -0.06788225 
+y_offset = 0.06788225 
 
 target_hubble = dl.OpticalSystem(
-    [dl.CreateWavefront(256, 2.4, wavefront_type='Angular'),
+    [dl.CreateWavefront(128, 2.4, wavefront_type='Angular'),
      dl.TiltWavefront(),
      dl.CompoundAperture({"Hubble": HubblePupil(), 
                           "Nicmos": NicmosColdMask(x_offset, y_offset)}),
@@ -157,23 +189,26 @@ target_hubble = dl.OpticalSystem(
     positions = target_positions,
     fluxes = target_fluxes)
 
+target_psf = target_hubble.propagate()
+
 # +
 hubble = dl.OpticalSystem(
-    [dl.CreateWavefront(256, 2.4, wavefront_type='Angular'), 
+    [dl.CreateWavefront(128, 2.4, wavefront_type='Angular'),
      dl.TiltWavefront(),
-     dl.CompoundAperture({"Hubble": HubblePupil(), "Nicmos": NicmosColdMask(0., 0.)}),
+     dl.CompoundAperture({"Hubble": HubblePupil(), 
+                          "Nicmos": NicmosColdMask(x_offset, y_offset)}),
      dl.NormaliseWavefront(),
-     dl.ApplyBasisOPD(basis, initial_coeffs),
+     dl.ApplyBasisOPD(basis, target_coeffs),
      dl.AngularMFT(dl.utils.arcsec2rad(0.043), 64)], 
     wavels = nicmos_filter[:, 0] * 1e-9, 
     weights = nicmos_filter[:, 1],
     positions = initial_positions,
-    fluxes = initial_fluxes)
+    fluxes = target_fluxes)
 
 # Define path dict and paths
 path_dict = {'zern': ['layers', -2, 'coeffs'],
-             'x_offset': ['layers', 2, 'apertures', 'Nicmos', 'delta_x_offset'],
-             'y_offset': ['layers', 2, 'apertures', 'Nicmos', 'delta_y_offset'],
+             'x_offset': ['layers', 2, 'apertures', 'Nicmos', 'x_offset'],
+             'y_offset': ['layers', 2, 'apertures', 'Nicmos', 'y_offset'],
              'positions': ['positions'],
              'fluxes': ['fluxes']}
 paths = ['zern', 'x_offset', 'y_offset', 'positions', 'fluxes']
@@ -188,8 +223,10 @@ def loss_func(model, target_psf):
 
 loss, grads = loss_func(hubble, target_psf)
 
+# Learning rates 
+# offset: 1e-3
 groups = [['x_offset', 'y_offset'], 'zern', 'positions', 'fluxes']
-optimisers = [optax.adam(1e-12), optax.adam(1e-12), optax.adam(1e-6), optax.adam(1e-12)]
+optimisers = [optax.adam(0.), optax.adam(0.), optax.adam(5e-7), optax.adam(0.)]
 optim = hubble.get_optimiser(groups, optimisers, path_dict=path_dict)
 opt_state = optim.init(hubble)
 
@@ -213,23 +250,24 @@ with tqdm.tqdm(range(200), desc='Gradient Descent') as t:
         t.set_description("Loss: {:.3f}".format(loss*1e-3)) #
 # -
 
-coordinates = dl.utils.get_pixel_coordinates(256, 2.4 / 256, 0., 0.)
+coordinates = dl.utils.get_pixel_coordinates(128, 2.4 / 128, 0., 0.)
 
 # +
 psf = models_out[-1].propagate()
 plt.rcParams['image.cmap'] = 'inferno'
 plt.rcParams["font.family"] = "serif"
 plt.rcParams['figure.dpi'] = 120
-current_cmap = cm.get_cmap().copy()
+
+current_cmap = mpl.cm.seismic
 current_cmap.set_bad(color="black")
 plt.figure(figsize=(12, 9))
 plt.subplot(3, 3, 1)
-plt.title("Log scale")
+plt.title("Input PSF")
 plt.imshow(target_psf ** 0.25)
 plt.colorbar()
 
 plt.subplot(3, 3, 2)
-plt.title("Log scale")
+plt.title("Output PSF")
 plt.imshow(psf ** 0.25)
 plt.colorbar()
 
@@ -262,29 +300,28 @@ plt.colorbar()
 target_aberrations = target_hubble\
     .layers[4]\
     .get_total_opd()\
-    .at[target_aperture < 0.999]\
+    .at[target_aperture < 0.9999]\
     .set(np.nan)
 plt.subplot(3, 3, 7)
 plt.title("Target Aberrations")
-plt.imshow(target_aperture * target_aberrations)
+plt.imshow(target_aperture * target_aberrations,cmap=current_cmap)
 plt.colorbar()
 
 aberrations = models_out[-1]\
     .layers[4]\
     .get_total_opd()\
-    .at[aperture < 0.999]\
+    .at[aperture < 0.9999]\
     .set(np.nan)
 plt.subplot(3, 3, 8)
 plt.title("Recovered Aberrations")
-plt.imshow(aberrations * aperture)
+plt.imshow(aberrations * aperture,cmap=current_cmap)
 plt.colorbar()
 
 plt.subplot(3, 3, 9)
 plt.title("Aberration Residuals")
-plt.imshow(target_aberrations - aberrations)
+plt.imshow(target_aberrations - aberrations,cmap=current_cmap)
 plt.colorbar()
 plt.savefig("../report_plan/binary_gradient_descent.pdf")
-plt.show()
 # -
 
 x_resid = x_offset - np.array([m.get_leaf('x_offset', path_dict=path_dict) 
@@ -295,32 +332,43 @@ pos_resid = target_positions - np.array([m.get_leaf("positions", path_dict=path_
                                          for m in models_out])
 coeff_resid = target_coeffs - np.array([m.get_leaf("zern", path_dict=path_dict) 
                                         for m in models_out])
+flux_resid = target_fluxes - np.array([m.get_leaf("fluxes", path_dict=path_dict)
+                                       for m in models_out]).T
 
 # +
-plt.figure(figsize=(10, 4))
-plt.subplot(1, 3, 1)
+plt.figure(figsize=(10, 10))
+plt.subplot(2, 2, 1)
 plt.title("x offset")
 plt.plot(x_resid)
 plt.plot(y_resid)
 
-plt.subplot(1, 3, 2)
+plt.subplot(2, 2, 2)
 plt.title("Position")
 plt.plot(pos_resid[:, 0, 0])
 plt.plot(pos_resid[:, 0, 1])
 plt.plot(pos_resid[:, 1, 0])
 plt.plot(pos_resid[:, 1, 1])
 
-plt.subplot(1, 3, 3)
+plt.subplot(2, 2, 3)
 plt.title("Coeffs")
 plt.plot(coeff_resid[:, 0])
 plt.plot(coeff_resid[:, 1])
 plt.plot(coeff_resid[:, 2])
 plt.plot(coeff_resid[:, 3])
 plt.plot(coeff_resid[:, 4])
+
+plt.subplot(2, 2, 4)
+plt.title("Fluxes")
+plt.plot(flux_resid[0])
+plt.plot(flux_resid[1])
 plt.show()
 # -
+dl.BinarySource([0., 0.], 1e-7, 2.)
 
-import numpyro
+help(dl.Spectrum)
 
+spectrum = np.tile(nicmos_filter, (2, 1, 1))
 
-def binary_model(target_psf)
+spectrum[0]
+
+dl.CombinedSpectrum()
