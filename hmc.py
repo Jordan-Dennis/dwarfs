@@ -188,11 +188,14 @@ det_npix = 64
 basis = dl.utils.zernike_basis(6, npix=wf_npix)[3:] * 1e-9
 true_coeffs = jr.normal(jr.PRNGKey(0), (basis.shape[0],))
 
+true_x_offset, true_y_offset = 0.067, -0.067
+pupils = {"Hubble": HubblePupil(), "Nicmos": NicmosColdMask(true_x_offset, true_y_offset)}
+
 # Construct optical layers,
 true_pixel_scale = dl.utils.arcsec2rad(0.043)
 layers = [dl.CreateWavefront(wf_npix, 2.4, wavefront_type="Angular"),
           dl.TiltWavefront(),
-          dl.CompoundAperture({"Hubble": HubblePupil(), "Nicmos": NicmosColdMask(0., 0.)}),
+          dl.CompoundAperture(pupils),
           dl.ApplyBasisOPD(basis, true_coeffs),
           dl.NormaliseWavefront(),
           dl.AngularMFT(true_pixel_scale, det_npix)]
@@ -239,20 +242,17 @@ plt.show()
 
 # Lets define our path dict to simplify accessing these attributes,
 path_dict = {
-    'pos'    : ['scene',    'sources', 'Binary',             'position'       ],
-    'sep'    : ['scene',    'sources', 'Binary',             'separation'     ],
-    'angle'  : ['scene',    'sources', 'Binary',             'field_angle'    ],
-    'flx'    : ['scene',    'sources', 'Binary',             'flux'           ],
-    'cont'   : ['scene',    'sources', 'Binary',             'flux_ratio'     ],
-    'zern'   : ['optics',   'layers',  'Apply Basis OPD',    'coeffs'         ],
-    'pscale' : ['optics',   'layers',  'AngularMFT',         'pixel_scale_out'],
-    'bg'     : ['detector', 'layers',  'AddConstant',        'value'          ],
-    'FF'     : ['detector', 'layers',  'ApplyPixelResponse', 'pixel_response' ]
-    }
-
-true_separation
-
-true_pixel_scale
+    'pos'      : ['scene',    'sources', 'Binary',             'position'       ],
+    'sep'      : ['scene',    'sources', 'Binary',             'separation'     ],
+    'angle'    : ['scene',    'sources', 'Binary',             'field_angle'    ],
+#    'flx'      : ['scene',    'sources', 'Binary',             'flux'           ],
+#    'cont'     : ['scene',    'sources', 'Binary',             'flux_ratio'     ],
+#    'zern'     : ['optics',   'layers',  'Apply Basis OPD',    'coeffs'         ],
+#    'bg'       : ['detector', 'layers',  'AddConstant',        'value'          ],
+#    'FF'       : ['detector', 'layers',  'ApplyPixelResponse', 'pixel_response' ],
+    'x_offset' : ['optics',   'layers',  'Nicmos',             'x_offset'       ],
+    'y_offset' : ['optics',   'layers',  'Nicmos',             'y_offset'       ]
+}
 
 
 def psf_model(data, model, path_dict=None):
@@ -278,18 +278,18 @@ def psf_model(data, model, path_dict=None):
     paths.append('angle'), values.append(field_angle)
     
     # Flux,
-    flux_log = npy.sample("log_flux", dist.Uniform(4, 8))
-    flux     = npy.deterministic('flux', 10**flux_log)
-    paths.append('flx'), values.append(flux)
+#     flux_log = npy.sample('log_flux', dist.Uniform(4, 8))
+#     flux     = npy.deterministic('flux', 10**flux_log)
+#     paths.append('flx'), values.append(flux)
     
     # Flux ratio,
-    flux_ratio_log = npy.sample("log_flux_ratio", dist.Uniform(0, 4))
-    flux_ratio     = npy.deterministic('flux_ratio', 10**flux_ratio_log)
-    paths.append('cont'), values.append(flux_ratio)
+#     flux_ratio_log = npy.sample('log_flux_ratio', dist.Uniform(0, 4))
+#     flux_ratio     = npy.deterministic('flux_ratio', 10**flux_ratio_log)
+#     paths.append('cont'), values.append(flux_ratio)
     
     # Zernikes
-    coeffs = npy.sample("coeffs", dist.Normal(0, 1), sample_shape=true_coeffs.shape)
-    paths.append('zern'), values.append(coeffs)
+#     coeffs = npy.sample("coeffs", dist.Normal(0, 1), sample_shape=true_coeffs.shape)
+#     paths.append('zern'), values.append(coeffs)
     
     # We comment this out here becuase it breaks numpyro.render_model(),
     # # Plate scale,
@@ -298,9 +298,18 @@ def psf_model(data, model, path_dict=None):
     # paths.append('pscale'), values.append(pscale),
     
     # Background
-    bg = npy.sample("bg", dist.Uniform(5, 15))
-    paths.append('bg'), values.append(bg)
-
+#     bg = npy.sample("bg", dist.Uniform(5, 15))
+#     paths.append('bg'), values.append(bg)
+    
+    # Offset 
+    margin_of_error = 0.2 * true_x_offset
+    x_lower_bound = true_x_offset - margin_of_error
+    x_upper_bound = true_x_offset + margin_of_error
+    y_lower_bound = true_y_offset - margin_of_error
+    y_upper_bound = true_y_offset + margin_of_error
+    x_offset = npy.sample("x_offset", dist.Uniform(x_lower_bound, x_upper_bound))
+    y_offset = npy.sample("y_offset", dist.Uniform(y_lower_bound, y_upper_bound))
+    
     with npy.plate("data", len(data)):
         poisson_model = dist.Poisson(model.update_and_model(
             "model_image", paths, values, path_dict=path_dict, flatten=True))
