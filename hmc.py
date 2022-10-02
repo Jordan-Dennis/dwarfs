@@ -18,7 +18,7 @@ plt.rcParams['image.cmap'] = 'inferno'
 plt.rcParams["font.family"] = 'serif'
 plt.rcParams["text.usetex"] = 'true'
 plt.rcParams['figure.dpi'] = 120
-jtplot.style("oceans16")
+jtplot.style("oceans16", grid=False)
 
 
 class NicmosColdMask(dl.CompoundAperture):
@@ -153,10 +153,22 @@ class HubblePupil(dl.CompoundAperture):
                 softening = True)}
 
 
-nwavels = 3
-wavels = np.linspace(400e-9, 500e-9, nwavels)
-wavelengths = [wavels, wavels]
-weights = [np.ones(nwavels), np.linspace(0.5, 1, nwavels)]
+with open("data/filters/HST_NICMOS1.F170M.dat") as filter_data:
+    next(filter_data)
+    nicmos_filter = np.array([
+            [float(entry) for entry in line.strip().split(" ")] 
+                for line in filter_data])
+
+nicmos_filter = nicmos_filter\
+    .reshape(10, 80, 2)\
+    .mean(axis=1)\
+    .at[:, 0]\
+    .mul(1e-9)
+
+dl_nicmos_filter = dl.Filter(nicmos_filter[:, 0], nicmos_filter[:, 1])
+
+wavelengths = np.tile(nicmos_filter[:, 0], (2, 1))
+weights = np.ones((2,) + nicmos_filter[:, 0].shape)
 combined_spectrum = dl.CombinedSpectrum(wavelengths, weights)
 
 # Create Binary Source,
@@ -170,15 +182,15 @@ binary_source = dl.BinarySource(true_position, true_flux, true_separation,
 
 # Construct Optical system
 wf_npix = 128
-det_npix = 128
+det_npix = 64
 
 # Zernike aberrations,
 basis = dl.utils.zernike_basis(6, npix=wf_npix)[3:] * 1e-9
 true_coeffs = jr.normal(jr.PRNGKey(0), (basis.shape[0],))
 
 # Construct optical layers,
-true_pixel_scale = dl.utils.arcsec2rad(5e-3)
-layers = [dl.CreateWavefront(wf_npix, 1),
+true_pixel_scale = dl.utils.arcsec2rad(0.043)
+layers = [dl.CreateWavefront(wf_npix, 2.4, wavefront_type="Angular"),
           dl.TiltWavefront(),
           dl.CompoundAperture({"Hubble": HubblePupil(), "Nicmos": NicmosColdMask(0., 0.)}),
           dl.ApplyBasisOPD(basis, true_coeffs),
@@ -196,6 +208,7 @@ detector_layers = [
 # Construct Telescope,
 telescope = dl.Telescope(dl.Optics(layers), 
                          dl.Scene([binary_source]),
+                         filter=dl_nicmos_filter,
                          detector=dl.Detector(detector_layers))
 
 # +
@@ -203,23 +216,23 @@ telescope = dl.Telescope(dl.Optics(layers),
 psf = telescope.model_scene()
 psf_photon = jr.poisson(jr.PRNGKey(0), psf)
 bg_noise = true_bg + jr.normal(jr.PRNGKey(0), psf_photon.shape)
-image = psf_photon+bg_noise
+image = psf_photon + bg_noise
 data = image.flatten()
 
 plt.figure(figsize=(15, 4))
 plt.subplot(1, 3, 1)
 plt.title("PSF")
-plt.imshow(psf)
+plt.imshow(psf ** 0.25)
 plt.colorbar()
 
 plt.subplot(1, 3, 2),
 plt.title("PSF + Photon")
-plt.imshow(psf_photon)
+plt.imshow(psf_photon ** 0.25)
 plt.colorbar()
 
 plt.subplot(1, 3, 3)
 plt.title("Data")
-plt.imshow(image)
+plt.imshow(image ** 0.25)
 plt.colorbar()
 plt.show()
 # -
@@ -237,6 +250,10 @@ path_dict = {
     'FF'     : ['detector', 'layers',  'ApplyPixelResponse', 'pixel_response' ]
     }
 
+true_separation
+
+true_pixel_scale
+
 
 def psf_model(data, model, path_dict=None):
     # Define empty paths and values lists to append to,
@@ -248,8 +265,8 @@ def psf_model(data, model, path_dict=None):
     paths.append('pos'), values.append(position)
     
     # Separation
-    sep_min = true_separation - 10*true_pixel_scale
-    sep_max = true_separation + 10*true_pixel_scale
+    sep_min = true_separation - 2 * true_pixel_scale
+    sep_max = true_separation + 2 * true_pixel_scale
     separation_log = npy.sample("log_separation", dist.Uniform(np.log10(sep_min), np.log10(sep_max)))
     separation     = npy.deterministic('separation', 10**(separation_log))
     paths.append('sep'), values.append(separation)
@@ -294,7 +311,7 @@ def psf_model(data, model, path_dict=None):
 sampler = npy.infer.MCMC(
     npy.infer.NUTS(psf_model),    
     num_warmup=1000,
-    num_samples=2000,
+    num_samples=1000,
     num_chains=jax.device_count(),
     progress_bar=True)
 
@@ -335,8 +352,7 @@ def make_dict(dict_in, truth=False):
     order = ['r', r'$\phi$', 'Pos$_x$', 
              'Pos$_y$', r'$\overline{flux}$', 
              'Contrast', r'$\mu_{BG}$', 'Focus', 
-             'Astig45', 'Astig0', 'ComaY', 'ComaX', 
-             'TfoilY', 'TfoilX']
+             'Astig45', 'Astig0']
     
     new_dict = {}
     for key in order:
@@ -351,6 +367,8 @@ truth_dict = {'bg':          true_bg,          'coeffs':   true_coeffs,
               'separation':  true_separation,  'bg_var':   1.,
               'pixel_scale': true_pixel_scale}
 
+chain_dict
+
 truth_dict_in = make_dict(truth_dict, truth=True)
 chain_dict = make_dict(values_out)
 chain = cc.ChainConsumer()
@@ -360,3 +378,5 @@ chain.configure(serif=True, shade=True, bar_shade=True,
 fig = chain.plotter.plot(truth=truth_dict_in)
 fig.set_size_inches((15,15))
 fig.savefig('hmc', dpi=200, facecolor='w')
+
+

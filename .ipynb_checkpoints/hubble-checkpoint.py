@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 from jupyterthemes import jtplot
 from astropy.io import fits
 
-jtplot.style("oceans16")
+jtplot.style("oceans16", grid=False)
 warnings.filterwarnings("ignore")
 mpl.rcParams["figure.facecolor"] = 'w'
 mpl.rcParams["axes.facecolor"] = 'w'
@@ -226,7 +226,7 @@ loss, grads = loss_func(hubble, target_psf)
 # Learning rates 
 # offset: 1e-3
 groups = [['x_offset', 'y_offset'], 'zern', 'positions', 'fluxes']
-optimisers = [optax.adam(0.), optax.adam(0.), optax.adam(5e-7), optax.adam(0.)]
+optimisers = [optax.adam(0.), optax.adam(0.), optax.adam(1e-7), optax.adam(0.)]
 optim = hubble.get_optimiser(groups, optimisers, path_dict=path_dict)
 opt_state = optim.init(hubble)
 
@@ -364,5 +364,42 @@ plt.plot(flux_resid[1])
 plt.show()
 # -
 spectrum = np.tile(nicmos_filter, (2, 1, 1)).at[:, :, 1].set(1.)
+wavelengths = spectrum[:, :, 0]
+weights = spectrum[:, :, 1]
 
-dl.CombinedSpectrum()
+spectrum = dl.CombinedSpectrum(wavelengths, weights)
+
+differences = target_positions[:, 0] - target_positions[:, 1]
+
+position = np.mean(target_positions, axis=0)
+separation = np.sqrt(np.sum((differences) ** 2))
+field_angle = np.arctan2(differences[1], differences[0])
+flux_ratio = target_fluxes[0] / target_fluxes[1]
+flux = target_fluxes.sum()
+
+target = dl.BinarySource(position, flux, separation, field_angle, flux_ratio, spectrum, [True, True])
+
+hubble_layers = [
+    dl.CreateWavefront(128, 2.4, wavefront_type='Angular'),
+    dl.TiltWavefront(),
+    dl.CompoundAperture({"Hubble": HubblePupil(), "Nicmos": NicmosColdMask(x_offset, y_offset)}),
+    dl.NormaliseWavefront(),
+    dl.ApplyBasisOPD(basis, target_coeffs),
+    dl.AngularMFT(dl.utils.arcsec2rad(0.043), 64)
+]
+
+detector_layers = [
+    dl.AddConstant(10.),
+    dl.ApplyPixelResponse(0.000005 * jax.random.normal(jax.random.PRNGKey(0), (64, 64)))
+]
+
+hubble_telescope = dl.Telescope(
+    dl.Optics(hubble_layers),
+    dl.Scene([target]),
+#    dl.Detector(detector_layers),
+#    filter=dl.Filter(nicmos_filter[:, 0], nicmos_filter[:, 1])
+)
+
+plt.imshow(hubble_telescope.model_image()[2])
+
+

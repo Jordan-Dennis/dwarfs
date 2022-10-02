@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 from jupyterthemes import jtplot
 from astropy.io import fits
 
-jtplot.style("oceans16")
+jtplot.style("oceans16", grid=False)
 warnings.filterwarnings("ignore")
 mpl.rcParams["figure.facecolor"] = 'w'
 mpl.rcParams["axes.facecolor"] = 'w'
@@ -153,6 +153,7 @@ class HubblePupil(dl.CompoundAperture):
                 softening = True)}
 
 
+# +
 with open("data/filters/HST_NICMOS1.F170M.dat") as filter_data:
     next(filter_data)
     nicmos_filter = np.array([
@@ -162,7 +163,7 @@ with open("data/filters/HST_NICMOS1.F170M.dat") as filter_data:
 nicmos_filter = nicmos_filter\
     .reshape(10, 80, 2)\
     .mean(axis=1)
-
+# -
 
 basis = dl.utils.zernike_basis(5, 128, outside=0.)
 target_coeffs = 1e-7 * jax.random.normal(jax.random.PRNGKey(0), [len(basis)])
@@ -212,8 +213,10 @@ path_dict = {'zern': ['layers', -2, 'coeffs'],
              'positions': ['positions'],
              'fluxes': ['fluxes']}
 paths = ['zern', 'x_offset', 'y_offset', 'positions', 'fluxes']
+# -
 
 filter_spec = hubble.get_filter_spec(paths, path_dict=path_dict)
+
 
 @eqx.filter_jit
 @eqx.filter_value_and_grad(arg=filter_spec)
@@ -221,8 +224,10 @@ def loss_func(model, target_psf):
     out = model.propagate()
     return np.sum((target_psf - out) ** 2)
 
+
 loss, grads = loss_func(hubble, target_psf)
 
+# +
 # Learning rates 
 # offset: 1e-3
 groups = [['x_offset', 'y_offset'], 'zern', 'positions', 'fluxes']
@@ -232,22 +237,23 @@ opt_state = optim.init(hubble)
 
 errors, grads_out, models_out = [], [], []
 
-with tqdm.tqdm(range(200), desc='Gradient Descent') as t:
-    for i in t: 
-        loss, grads = loss_func(hubble, target_psf)
-        updates, opt_state = optim.update(grads, opt_state)
+# +
+# with tqdm.tqdm(range(200), desc='Gradient Descent') as t:
+#     for i in t: 
+#         loss, grads = loss_func(hubble, target_psf)
+#         updates, opt_state = optim.update(grads, opt_state)
         
-        current_values = hubble.get_leaves(paths, path_dict=path_dict)
-        updated_values = updates.get_leaves(paths, path_dict=path_dict)
-        new_values = [current_values[i] + updated_values[i] \
-                      for i in range(len(current_values))]
-        hubble = hubble.update_leaves(paths, new_values, path_dict=path_dict)
+#         current_values = hubble.get_leaves(paths, path_dict=path_dict)
+#         updated_values = updates.get_leaves(paths, path_dict=path_dict)
+#         new_values = [current_values[i] + updated_values[i] \
+#                       for i in range(len(current_values))]
+#         hubble = hubble.update_leaves(paths, new_values, path_dict=path_dict)
         
-        models_out.append(hubble)
-        errors.append(loss)
-        grads_out.append(grads)
+#         models_out.append(hubble)
+#         errors.append(loss)
+#         grads_out.append(grads)
 
-        t.set_description("Loss: {:.3f}".format(loss*1e-3)) #
+#         t.set_description("Loss: {:.3f}".format(loss*1e-3)) #
 # -
 
 coordinates = dl.utils.get_pixel_coordinates(128, 2.4 / 128, 0., 0.)
@@ -367,26 +373,47 @@ spectrum = np.tile(nicmos_filter, (2, 1, 1)).at[:, :, 1].set(1.)
 wavelengths = spectrum[:, :, 0]
 weights = spectrum[:, :, 1]
 
-specturm = dl.CombinedSpectrum(wavelengths, weights)
+spectrum = dl.CombinedSpectrum(wavelengths, weights)
+
+differences = target_positions[:, 0] - target_positions[:, 1]
 
 position = np.mean(target_positions, axis=0)
-separation = np.sqrt(np.sum((target_positions[:, 0] - target_positions[:, 1]) ** 2))
+separation = np.sqrt(np.sum((differences) ** 2))
 field_angle = np.arctan2(differences[1], differences[0])
 flux_ratio = target_fluxes[0] / target_fluxes[1]
 flux = target_fluxes.sum()
 
-target = dl.BinarySource(position, flux, separation, field_angle, flux_ratio, spectrum, [True, True])
+target = dl.BinarySource(position, flux, separation, field_angle, flux_ratio, spectrum, [False, False])
 
-hubble_telescope = dl.Telescope
+true_position = np.zeros(2)
+true_separation, true_field_angle = dl.utils.arcsec2rad(1e-1), 0
+true_flux, true_flux_ratio = 1e5, 2
+resolved = [False, False]
+binary_source = dl.BinarySource(true_position, true_flux, true_separation, 
+                             true_field_angle, true_flux_ratio, 
+                             spectrum, resolved, name="Binary")
 
-help(dl.Optics)
+hubble_layers = [
+    dl.CreateWavefront(128, 2.4, wavefront_type='Angular'),
+    dl.TiltWavefront(),
+    dl.CompoundAperture({"Hubble": HubblePupil(), "Nicmos": NicmosColdMask(0., 0.)}),
+    dl.NormaliseWavefront(),
+    dl.ApplyBasisOPD(basis, target_coeffs),
+    dl.AngularMFT(dl.utils.arcsec2rad(0.043), 64)
+]
 
-help(dl.Detector)
+detector_layers = [
+    dl.AddConstant(10.),
+    dl.ApplyPixelResponse(0.000005 * jax.random.normal(jax.random.PRNGKey(0), (64, 64)))
+]
 
-help(dl.Telescope)
+hubble_telescope = dl.Telescope(
+    dl.Optics(hubble_layers),
+    dl.Scene([target]),
+#    dl.Detector(detector_layers),
+#    filter=dl.Filter(nicmos_filter[:, 0], nicmos_filter[:, 1])
+)
 
-dl.Filter(nicmos_filter[:, 0], nicmos_filter[:, 1])
-
-help(dl.Filter)
+plt.imshow(hubble_telescope.model_image()[2])
 
 
