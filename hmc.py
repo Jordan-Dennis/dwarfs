@@ -18,7 +18,6 @@ plt.rcParams['image.cmap'] = 'inferno'
 plt.rcParams["font.family"] = 'serif'
 plt.rcParams["text.usetex"] = 'true'
 plt.rcParams['figure.dpi'] = 120
-jtplot.style("oceans16", grid=False)
 
 
 class NicmosColdMask(dl.CompoundAperture):
@@ -173,7 +172,7 @@ combined_spectrum = dl.CombinedSpectrum(wavelengths, weights)
 
 # Create Binary Source,
 true_position = np.zeros(2)
-true_separation, true_field_angle = dl.utils.arcsec2rad(1e-1), 0
+true_separation, true_field_angle = dl.utils.arcsec2rad(5e-1), 0
 true_flux, true_flux_ratio = 1e5, 2
 resolved = [False, False]
 binary_source = dl.BinarySource(true_position, true_flux, true_separation, 
@@ -245,13 +244,13 @@ path_dict = {
     'pos'      : ['scene',    'sources', 'Binary',             'position'       ],
     'sep'      : ['scene',    'sources', 'Binary',             'separation'     ],
     'angle'    : ['scene',    'sources', 'Binary',             'field_angle'    ],
-#    'flx'      : ['scene',    'sources', 'Binary',             'flux'           ],
-#    'cont'     : ['scene',    'sources', 'Binary',             'flux_ratio'     ],
-#    'zern'     : ['optics',   'layers',  'Apply Basis OPD',    'coeffs'         ],
-#    'bg'       : ['detector', 'layers',  'AddConstant',        'value'          ],
-#    'FF'       : ['detector', 'layers',  'ApplyPixelResponse', 'pixel_response' ],
-    'x_offset' : ['optics',   'layers',  'Nicmos',             'x_offset'       ],
-    'y_offset' : ['optics',   'layers',  'Nicmos',             'y_offset'       ]
+#     'flx'      : ['scene',    'sources', 'Binary',             'flux'           ],
+#     'cont'     : ['scene',    'sources', 'Binary',             'flux_ratio'     ],
+#     'zern'     : ['optics',   'layers',  'Apply Basis OPD',    'coeffs'         ],
+#     'bg'       : ['detector', 'layers',  'AddConstant',        'value'          ],
+#     'FF'       : ['detector', 'layers',  'ApplyPixelResponse', 'pixel_response' ],
+#     'x_offset' : ['optics',   'layers',  'Nicmos',             'x_offset'       ],
+#     'y_offset' : ['optics',   'layers',  'Nicmos',             'y_offset'       ]
 }
 
 
@@ -260,20 +259,21 @@ def psf_model(data, model, path_dict=None):
     paths, values = [], []
     
     # Position
-    position_pix = npy.sample("position_pix", dist.Uniform(-10, 10), sample_shape=(2,))
+    position_pix = npy.sample("position_pix", dist.Uniform(-4, 4), sample_shape=(2,))
     position     = npy.deterministic('position', position_pix * true_pixel_scale)
     paths.append('pos'), values.append(position)
     
     # Separation
-    sep_min = true_separation - 2 * true_pixel_scale
-    sep_max = true_separation + 2 * true_pixel_scale
-    separation_log = npy.sample("log_separation", dist.Uniform(np.log10(sep_min), np.log10(sep_max)))
-    separation     = npy.deterministic('separation', 10**(separation_log))
+
+    log_sep_min = np.log(true_separation - 2 * true_pixel_scale)
+    log_sep_max = np.log(true_separation + 2 * true_pixel_scale)
+    separation_log = npy.sample("log_sep", dist.Uniform(log_sep_min, log_sep_max))
+    separation     = npy.deterministic('separation', np.exp(separation_log))
     paths.append('sep'), values.append(separation)
     
     # Field Angle (Position Angle),
-    theta_x = npy.sample("theta_x", dist.Normal(0, 1))
-    theta_y = npy.sample("theta_y", dist.Normal(0, 1))
+    theta_x = npy.sample("theta_x", dist.Normal(0, .5))
+    theta_y = npy.sample("theta_y", dist.HalfNormal(.5))
     field_angle = npy.deterministic('field_angle', np.arctan2(theta_y, theta_x))
     paths.append('angle'), values.append(field_angle)
     
@@ -302,13 +302,13 @@ def psf_model(data, model, path_dict=None):
 #     paths.append('bg'), values.append(bg)
     
     # Offset 
-    margin_of_error = 0.2 * true_x_offset
-    x_lower_bound = true_x_offset - margin_of_error
-    x_upper_bound = true_x_offset + margin_of_error
-    y_lower_bound = true_y_offset - margin_of_error
-    y_upper_bound = true_y_offset + margin_of_error
-    x_offset = npy.sample("x_offset", dist.Uniform(x_lower_bound, x_upper_bound))
-    y_offset = npy.sample("y_offset", dist.Uniform(y_lower_bound, y_upper_bound))
+#     margin_of_error = 0.2 * true_x_offset
+#     x_lower_bound = true_x_offset - margin_of_error
+#     x_upper_bound = true_x_offset + margin_of_error
+#     y_lower_bound = true_y_offset - margin_of_error
+#     y_upper_bound = true_y_offset + margin_of_error
+#     x_offset = npy.sample("x_offset", dist.Uniform(x_lower_bound, x_upper_bound))
+#     y_offset = npy.sample("y_offset", dist.Uniform(y_lower_bound, y_upper_bound))
     
     with npy.plate("data", len(data)):
         poisson_model = dist.Poisson(model.update_and_model(
@@ -324,14 +324,14 @@ sampler = npy.infer.MCMC(
     num_chains=jax.device_count(),
     progress_bar=True)
 
-sampler.run(jr.PRNGKey(0), data, telescope, path_dict=path_dict)
+sampler.run(jr.PRNGKey(11), data, telescope, path_dict=path_dict)
 
 values_out = sampler.get_samples()
 
 
 def make_dict(dict_in, truth=False):
     znames = ['Focus', 'Astig45', 'Astig0', 'ComaY', 'ComaX', 'TfoilY', 'TfoilX']
-    pos_names = ['Pos$_x$', 'Pos$_y$']
+    pos_names = ['Pos_x', 'Pos_y']
     name_dict = {'separation': 'r', 
                  'field_angle': r'$\phi$',
                  'flux_ratio': 'Contrast', 
@@ -358,10 +358,17 @@ def make_dict(dict_in, truth=False):
             dict_out[name_dict[key]] = item
 
     # Now re-order for nicer plotting
-    order = ['r', r'$\phi$', 'Pos$_x$', 
-             'Pos$_y$', r'$\overline{flux}$', 
-             'Contrast', r'$\mu_{BG}$', 'Focus', 
-             'Astig45', 'Astig0']
+    order = [
+#         'r', 
+        r'$\phi$', 
+#         'Pos_x', 
+#         'Pos_y', 
+#         r'$\overline{flux}$', 
+#         'Contrast', 
+#         r'$\mu_{BG}$', 'Focus', 
+#         'Astig45', 
+#         'Astig0'
+    ]
     
     new_dict = {}
     for key in order:
@@ -370,13 +377,17 @@ def make_dict(dict_in, truth=False):
 
 
 # Format chains for plotting,
-truth_dict = {'bg':          true_bg,          'coeffs':   true_coeffs, 
-              'field_angle': true_field_angle, 'flux':     true_flux, 
-              'flux_ratio':  true_flux_ratio,  'position': true_position, 
-              'separation':  true_separation,  'bg_var':   1.,
-              'pixel_scale': true_pixel_scale}
-
-chain_dict
+truth_dict = {
+#     'bg':          true_bg,          
+#     'coeffs':   true_coeffs, 
+    'field_angle': true_field_angle, 
+#     'flux':     true_flux, 
+#     'flux_ratio':  true_flux_ratio,  
+#     'position': true_position, 
+#     'separation':  true_separation,  
+#     'bg_var':   1.,
+#     'pixel_scale': true_pixel_scale
+}
 
 truth_dict_in = make_dict(truth_dict, truth=True)
 chain_dict = make_dict(values_out)
@@ -385,7 +396,38 @@ chain.add_chain(chain_dict)
 chain.configure(serif=True, shade=True, bar_shade=True, 
                 shade_alpha=0.2, spacing=1., max_ticks=3)
 fig = chain.plotter.plot(truth=truth_dict_in)
-fig.set_size_inches((15,15))
+fig.set_size_inches((4,4))
 fig.savefig('hmc', dpi=200, facecolor='w')
 
+values_out
 
+est_field_angle = values_out['field_angle'].mean()
+
+binary_source = dl.BinarySource(true_position, true_flux, true_separation, 
+                             est_field_angle, true_flux_ratio, 
+                             combined_spectrum, resolved, name="Binary")
+
+# Construct Telescope,
+telescope_est = dl.Telescope(dl.Optics(layers), 
+                         dl.Scene([binary_source]),
+                         filter=dl_nicmos_filter,
+                         detector=dl.Detector(detector_layers))
+
+# +
+## Gerenate psf,
+psf = telescope_est.model_scene()
+psf_photon = jr.poisson(jr.PRNGKey(0), psf)
+bg_noise = true_bg + jr.normal(jr.PRNGKey(0), psf_photon.shape)
+image = psf_photon + bg_noise
+data = image.flatten()
+
+plt.figure(figsize=(15, 4))
+plt.subplot(1, 2, 1)
+plt.title("PSF")
+plt.imshow(psf ** 0.25)
+plt.colorbar()
+
+plt.subplot(1, 2, 2),
+plt.title("PSF + Photon")
+plt.imshow(psf_photon ** 0.25)
+plt.colorbar()
