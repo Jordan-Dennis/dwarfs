@@ -241,7 +241,7 @@ plt.show()
 
 # Lets define our path dict to simplify accessing these attributes,
 path_dict = {
-    'pos'      : ['scene',    'sources', 'Binary',             'position'       ],
+#     'pos'      : ['scene',    'sources', 'Binary',             'position'       ],
     'sep'      : ['scene',    'sources', 'Binary',             'separation'     ],
     'angle'    : ['scene',    'sources', 'Binary',             'field_angle'    ],
 #     'flx'      : ['scene',    'sources', 'Binary',             'flux'           ],
@@ -259,9 +259,9 @@ def psf_model(data, model, path_dict=None):
     paths, values = [], []
     
     # Position
-    position_pix = npy.sample("position_pix", dist.Uniform(-4, 4), sample_shape=(2,))
-    position     = npy.deterministic('position', position_pix * true_pixel_scale)
-    paths.append('pos'), values.append(position)
+#     position_pix = npy.sample("position_pix", dist.Uniform(-4, 4), sample_shape=(2,))
+#     position     = npy.deterministic('position', position_pix * true_pixel_scale)
+#     paths.append('pos'), values.append(position)
     
     # Separation
 
@@ -324,7 +324,7 @@ sampler = npy.infer.MCMC(
     num_chains=jax.device_count(),
     progress_bar=True)
 
-sampler.run(jr.PRNGKey(11), data, telescope, path_dict=path_dict)
+sampler.run(jr.PRNGKey(3), data, telescope, path_dict=path_dict)
 
 values_out = sampler.get_samples()
 
@@ -359,10 +359,10 @@ def make_dict(dict_in, truth=False):
 
     # Now re-order for nicer plotting
     order = [
-#         'r', 
-        r'$\phi$', 
-#         'Pos_x', 
-#         'Pos_y', 
+        'r', 
+#         r'$\phi$', 
+        'Pos_x', 
+        'Pos_y', 
 #         r'$\overline{flux}$', 
 #         'Contrast', 
 #         r'$\mu_{BG}$', 'Focus', 
@@ -380,11 +380,11 @@ def make_dict(dict_in, truth=False):
 truth_dict = {
 #     'bg':          true_bg,          
 #     'coeffs':   true_coeffs, 
-    'field_angle': true_field_angle, 
+#     'field_angle': true_field_angle, 
 #     'flux':     true_flux, 
 #     'flux_ratio':  true_flux_ratio,  
-#     'position': true_position, 
-#     'separation':  true_separation,  
+    'position': true_position, 
+    'separation':  true_separation,  
 #     'bg_var':   1.,
 #     'pixel_scale': true_pixel_scale
 }

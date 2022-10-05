@@ -12,7 +12,6 @@ import matplotlib.pyplot as plt
 from jupyterthemes import jtplot
 from astropy.io import fits
 
-jtplot.style("oceans16", grid=False)
 warnings.filterwarnings("ignore")
 mpl.rcParams["figure.facecolor"] = 'w'
 mpl.rcParams["axes.facecolor"] = 'w'
@@ -64,24 +63,24 @@ class NicmosColdMask(dl.CompoundAperture):
                 width_of_struts = 0.0804,
                 rotation = 0.785398163,
                 softening = True),
-            "Mirror Pad 1": dl.SquareAperture(
+            "Mirror Pad 2": dl.SquareAperture(
                 x_offset = 1.070652 * np.cos(np.pi / 4) + x_offset, 
                 y_offset = 1.070652 * np.sin(np.pi / 4) + y_offset,
-                theta = - np.pi / 4,
+                theta = np.pi / 4,
                 width = 0.156,
                 occulting = True,
                 softening = True),
-            "Mirror Pad 2": dl.SquareAperture(
+            "Mirror Pad 3": dl.SquareAperture(
                 x_offset = 1.070652 * np.cos(np.pi / 4 + 2 * np.pi / 3) + x_offset, 
                 y_offset = 1.070652 * np.sin(np.pi / 4 + 2 * np.pi / 3) + y_offset,
-                theta = - np.pi / 4 + np.pi / 3,
+                theta = np.pi / 4 + 2 * np.pi / 3,
                 width = 0.156,
                 occulting = True, 
                 softening = True),
-            "Mirror Pad 3": dl.SquareAperture(
+            "Mirror Pad 1": dl.SquareAperture(
                 x_offset = 1.070652 * np.cos(np.pi / 4 - 2 * np.pi / 3) + x_offset, 
                 y_offset = 1.070652 * np.sin(np.pi / 4 - 2 * np.pi / 3) + y_offset,
-                theta = - np.pi / 3 - np.pi / 4,
+                theta = np.pi / 4 - 2 * np.pi / 3,
                 width = 0.156,
                 occulting = True,
                 softening = True)}
@@ -153,6 +152,7 @@ class HubblePupil(dl.CompoundAperture):
                 softening = True)}
 
 
+# +
 with open("data/filters/HST_NICMOS1.F170M.dat") as filter_data:
     next(filter_data)
     nicmos_filter = np.array([
@@ -162,7 +162,7 @@ with open("data/filters/HST_NICMOS1.F170M.dat") as filter_data:
 nicmos_filter = nicmos_filter\
     .reshape(10, 80, 2)\
     .mean(axis=1)
-
+# -
 
 basis = dl.utils.zernike_basis(5, 128, outside=0.)
 target_coeffs = 1e-7 * jax.random.normal(jax.random.PRNGKey(0), [len(basis)])
@@ -191,6 +191,90 @@ target_hubble = dl.OpticalSystem(
 
 target_psf = target_hubble.propagate()
 
+naive_hubble = dl.OpticalSystem(
+    [dl.CreateWavefront(128, 2.4, wavefront_type='Angular'),
+     dl.TiltWavefront(),
+     dl.CompoundAperture({"Hubble": HubblePupil(), 
+                          "Nicmos": NicmosColdMask(0., 0.)}),
+     dl.NormaliseWavefront(),
+     dl.AngularMFT(dl.utils.arcsec2rad(0.043), 64)], 
+    wavels = nicmos_filter[:, 0] * 1e-9, 
+    weights = nicmos_filter[:, 1],
+    positions = target_positions,
+    fluxes = target_fluxes)
+
+plt.imshow(naive_hubble.propagate() ** 0.25)
+
+mpl.rcParams["image.cmap"] = "inferno"
+mpl.rcParams["text.usetex"] = True
+mpl.rcParams["font.serif"] = "Times New Roman"
+mpl.rcParams['text.color'] = "white"
+mpl.rcParams['axes.labelcolor'] = "white"
+mpl.rcParams['xtick.color'] = "white"
+mpl.rcParams['ytick.color'] = "white"
+mpl.rcParams['axes.edgecolor'] = 'white'
+mpl.rcParams['figure.facecolor'] = 'black'
+from mpl_toolkits.axes_grid1 import make_axes_locatable
+
+
+# +
+tick_coordinates = [8, 16, 24, 32, 40, 48, 56]
+
+coordinate_labels = []
+for coordinate in tick_coordinates:
+    physical_coordinate = coordinate * 0.043 - 32 * 0.043
+    coordinate_labels.append(f"${round(physical_coordinate, 3)}$")
+
+figure, axes = plt.subplots(1, 3, figsize=(32, 10), facecolor="black")
+plt.subplots_adjust(wspace = 0.4)
+
+axes[0].imshow(target_psf ** 0.25)
+axes[0].set_title(r"$\textrm{Simulated Data}$", fontsize=40)
+axes[0].set_xlabel("$x ('')$", fontsize=30)
+axes[0].set_ylabel("$y ('')$", fontsize=30)
+axes[0].set_xticks(tick_coordinates, coordinate_labels, rotation='vertical', fontsize=20)
+axes[0].set_yticks(tick_coordinates[::-1], coordinate_labels, fontsize=20)
+
+tick_coordinates = [16, 32, 48, 64, 80, 96, 112]
+
+coordinate_labels = []
+for coordinate in tick_coordinates:
+    physical_coordinate = coordinate * 2.4 / 128. - 64 * 2.4 / 128.
+    coordinate_labels.append(f"${round(physical_coordinate, 3)}$")
+
+axes[1].imshow(naive_hubble.layers[2]._aperture(dl.utils.get_pixel_coordinates(128, 2.4 / 128., 0., 0.)))
+axes[1].set_title(r"$\textrm{Naive Pupil}$", fontsize=40)
+axes[1].set_xlabel("$x (m)$", fontsize=30)
+axes[1].set_ylabel("$y (m)$", fontsize=30)
+axes[1].set_xticks(tick_coordinates, coordinate_labels, rotation='vertical', fontsize=20)
+axes[1].set_yticks(tick_coordinates[::-1], coordinate_labels, fontsize=20)
+
+coordinates = dl.utils.get_pixel_coordinates(128, 2.4 / 128., 0., 0.)
+aperture = target_hubble.layers[2]._aperture(coordinates)
+
+aberrations = np.full(aperture.shape, np.nan)\
+    .at[aperture > 0.9]\
+    .set(target_hubble\
+        .layers[4]\
+        .get_total_opd()\
+        .at[aperture > 0.9]\
+        .get())
+
+current_cmap = mpl.cm.get_cmap()
+current_cmap.set_bad(color='black')
+
+divider = make_axes_locatable(axes[2])
+cax = divider.append_axes('right', size='5%', pad=0.05)
+
+sketch = axes[2].imshow(aberrations, interpolation=None, cmap=current_cmap)
+figure.colorbar(sketch, ax=axes, cax=cax)
+axes[2].set_title(r"$\textrm{Optimised Pupil}$", fontsize=40)
+axes[2].set_xlabel("$x (m)$", fontsize=30)
+axes[2].set_ylabel("$y (m)$", fontsize=30)
+axes[2].set_xticks(tick_coordinates, coordinate_labels, rotation='vertical', fontsize=20)
+axes[2].set_yticks(tick_coordinates[::-1], coordinate_labels, fontsize=20)
+figure.savefig("../presentation/optimised_pupil.pdf", facecolor="black", bbox_inches="tight")
+
 # +
 hubble = dl.OpticalSystem(
     [dl.CreateWavefront(128, 2.4, wavefront_type='Angular'),
@@ -212,8 +296,10 @@ path_dict = {'zern': ['layers', -2, 'coeffs'],
              'positions': ['positions'],
              'fluxes': ['fluxes']}
 paths = ['zern', 'x_offset', 'y_offset', 'positions', 'fluxes']
+# -
 
 filter_spec = hubble.get_filter_spec(paths, path_dict=path_dict)
+
 
 @eqx.filter_jit
 @eqx.filter_value_and_grad(arg=filter_spec)
@@ -221,8 +307,10 @@ def loss_func(model, target_psf):
     out = model.propagate()
     return np.sum((target_psf - out) ** 2)
 
+
 loss, grads = loss_func(hubble, target_psf)
 
+# +
 # Learning rates 
 # offset: 1e-3
 groups = [['x_offset', 'y_offset'], 'zern', 'positions', 'fluxes']
@@ -232,22 +320,23 @@ opt_state = optim.init(hubble)
 
 errors, grads_out, models_out = [], [], []
 
-with tqdm.tqdm(range(200), desc='Gradient Descent') as t:
-    for i in t: 
-        loss, grads = loss_func(hubble, target_psf)
-        updates, opt_state = optim.update(grads, opt_state)
+# +
+# with tqdm.tqdm(range(200), desc='Gradient Descent') as t:
+#     for i in t: 
+#         loss, grads = loss_func(hubble, target_psf)
+#         updates, opt_state = optim.update(grads, opt_state)
         
-        current_values = hubble.get_leaves(paths, path_dict=path_dict)
-        updated_values = updates.get_leaves(paths, path_dict=path_dict)
-        new_values = [current_values[i] + updated_values[i] \
-                      for i in range(len(current_values))]
-        hubble = hubble.update_leaves(paths, new_values, path_dict=path_dict)
+#         current_values = hubble.get_leaves(paths, path_dict=path_dict)
+#         updated_values = updates.get_leaves(paths, path_dict=path_dict)
+#         new_values = [current_values[i] + updated_values[i] \
+#                       for i in range(len(current_values))]
+#         hubble = hubble.update_leaves(paths, new_values, path_dict=path_dict)
         
-        models_out.append(hubble)
-        errors.append(loss)
-        grads_out.append(grads)
+#         models_out.append(hubble)
+#         errors.append(loss)
+#         grads_out.append(grads)
 
-        t.set_description("Loss: {:.3f}".format(loss*1e-3)) #
+#         t.set_description("Loss: {:.3f}".format(loss*1e-3)) #
 # -
 
 coordinates = dl.utils.get_pixel_coordinates(128, 2.4 / 128, 0., 0.)
@@ -377,12 +466,20 @@ field_angle = np.arctan2(differences[1], differences[0])
 flux_ratio = target_fluxes[0] / target_fluxes[1]
 flux = target_fluxes.sum()
 
-target = dl.BinarySource(position, flux, separation, field_angle, flux_ratio, spectrum, [True, True])
+target = dl.BinarySource(position, flux, separation, field_angle, flux_ratio, spectrum, [False, False])
+
+true_position = np.zeros(2)
+true_separation, true_field_angle = dl.utils.arcsec2rad(1e-1), 0
+true_flux, true_flux_ratio = 1e5, 2
+resolved = [False, False]
+binary_source = dl.BinarySource(true_position, true_flux, true_separation, 
+                             true_field_angle, true_flux_ratio, 
+                             spectrum, resolved, name="Binary")
 
 hubble_layers = [
     dl.CreateWavefront(128, 2.4, wavefront_type='Angular'),
     dl.TiltWavefront(),
-    dl.CompoundAperture({"Hubble": HubblePupil(), "Nicmos": NicmosColdMask(x_offset, y_offset)}),
+    dl.CompoundAperture({"Hubble": HubblePupil(), "Nicmos": NicmosColdMask(0., 0.)}),
     dl.NormaliseWavefront(),
     dl.ApplyBasisOPD(basis, target_coeffs),
     dl.AngularMFT(dl.utils.arcsec2rad(0.043), 64)
