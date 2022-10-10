@@ -150,12 +150,12 @@ class HubblePupil(dl.CompoundAperture):
                 rotation = 0.785398163,
                 softening = True)}
 
-with open("HST_NICMOS1.F170M.dat") as filter_data:
+with open("data/filters/HST_NICMOS1.F170M.dat") as filter_data:
     next(filter_data)
     nicmos_filter = np.array([
             [float(entry) for entry in line.strip().split(" ")] 
                 for line in filter_data])
-    
+
 plt.figure(figsize=(15, 6))
 plt.subplot(1, 2, 1)
 plt.title("Raw filter")
@@ -220,6 +220,7 @@ true_pixel_response = 1 + 0.05*jr.normal(jr.PRNGKey(0), (det_npix, det_npix))
 detector_layers = [
     dl.AddConstant(true_bg),
     # dl.ApplyPixelResponse(true_pixel_response),
+]
 
 # Construct Telescope,
 telescope = dl.Telescope(dl.Optics(layers), 
@@ -412,6 +413,9 @@ truth_dict = {
     'offset_y': -0.067,
 }
 
+truth_dict_in = make_dict(truth_dict, truth=True)
+chain_dict = make_dict(values_out)
+
 chain = cc.ChainConsumer()
 chain.add_chain(chain_dict)
 chain.configure(serif=True, shade=True, bar_shade=True, 
@@ -451,3 +455,16 @@ plt.subplot(1, 2, 2),
 plt.title("PSF + Photon")
 plt.imshow(psf_photon ** 0.25)
 plt.colorbar()
+# -
+
+import h5py
+
+help(h5py)
+
+data_file = h5py.File("chains.hdf5", "w")
+for param, chain in values_out.items():
+    data_file.create_dataset(param, data=chain)
+
+data_file.close()
+
+
