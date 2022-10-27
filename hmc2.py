@@ -188,7 +188,7 @@ combined_spectrum = dl.CombinedSpectrum(wavelengths, weights).normalise()
 # Create Binary Source,
 true_position = np.zeros(2)
 true_separation, true_field_angle = dl.utils.arcsec2rad(5e-1), 0
-true_flux, true_flux_ratio = 1e5, 2
+true_flux, true_flux_ratio = 1e5, 10
 resolved = [False, False]
 binary_source = dl.BinarySource(true_position, true_flux, true_separation, 
                              true_field_angle, true_flux_ratio, 
@@ -235,6 +235,7 @@ bg_noise = true_bg + jr.normal(jr.PRNGKey(0), psf_photon.shape)
 image = psf_photon + bg_noise
 data = image.flatten()
 
+# +
 plt.figure(figsize=(15, 4))
 plt.subplot(1, 3, 1)
 plt.title("PSF")
@@ -251,6 +252,7 @@ plt.title("Data")
 plt.imshow(image ** 0.25)
 plt.colorbar()
 plt.show()
+# -
 
 # Lets define our path dict to simplify accessing these attributes
 # These can all always be defined, there is no need to comment them out
@@ -284,17 +286,17 @@ def psf_model(data, model, path_dict=None):
     paths.append('pos'), values.append(position)
     
     # Separation
-    log_sep_min = np.log(true_separation - 2 * true_pixel_scale)
-    log_sep_max = np.log(true_separation + 2 * true_pixel_scale)
+    log_sep_min = np.log(true_separation - 5 * true_pixel_scale)
+    log_sep_max = np.log(true_separation + 5 * true_pixel_scale)
     separation_log = npy.sample("log_sep", dist.Uniform(log_sep_min, log_sep_max))
     separation     = npy.deterministic('separation', np.exp(separation_log))
     paths.append('sep'), values.append(separation)
     
     # Field Angle (Position Angle),
-    # theta_x = npy.sample("theta_x", dist.Normal(0, 1))
-    # theta_y = npy.sample("theta_y", dist.Normal(0, 1))
-    # field_angle = npy.deterministic('field_angle', np.arctan2(theta_y, theta_x))
-    field_angle = npy.sample("field_angle", dist.Uniform(-np.pi/4, np.pi/4))
+    theta_x = npy.sample("theta_x", dist.Normal(0, 1))
+    theta_y = npy.sample("theta_y", dist.Normal(0, 1))
+    field_angle = npy.deterministic('field_angle', np.arctan2(theta_y, theta_x))
+#     field_angle = npy.sample("field_angle", dist.Uniform(-np.pi/4, np.pi/4))
     paths.append('angle'), values.append(field_angle)
     
     # Flux,
@@ -303,7 +305,7 @@ def psf_model(data, model, path_dict=None):
     paths.append('flx'), values.append(flux)
     
     # Flux ratio,
-    flux_ratio_log = npy.sample('log_flux_ratio', dist.Uniform(0, 4))
+    flux_ratio_log = npy.sample('log_flux_ratio', dist.Uniform(0, 2))
     flux_ratio     = npy.deterministic('flux_ratio', 10**flux_ratio_log)
     paths.append('cont'), values.append(flux_ratio)
     
@@ -329,8 +331,6 @@ def psf_model(data, model, path_dict=None):
             "model_image", paths, values, path_dict=path_dict, flatten=True))
     
     return npy.sample("psf", poisson_model, obs=data)
-
-telescope.optics.layers['CompoundAperture']['Nicmos'].x_offset, telescope.optics.layers['CompoundAperture']['Nicmos'].y_offset
 
 sampler = npy.infer.MCMC(
     npy.infer.NUTS(psf_model),    
@@ -414,7 +414,7 @@ truth_dict = {
 }
 
 truth_dict_in = make_dict(truth_dict, truth=True)
-chain_dict = make_dict(values_out)
+# chain_dict = make_dict(values_out)
 
 chain = cc.ChainConsumer()
 chain.add_chain(chain_dict)
@@ -458,13 +458,26 @@ plt.colorbar()
 # -
 
 import h5py
+import hdfdict 
 
-help(h5py)
+data_file = h5py.File("chains.hdf5")
 
-data_file = h5py.File("chains.hdf5", "w")
-for param, chain in values_out.items():
-    data_file.create_dataset(param, data=chain)
+chain_dict = hdfdict.load(data_file)
 
-data_file.close()
+chain_dict = {key: np.array(chain_dict[key]) for key in chain_dict}
+
+truth_dict_in = make_dict(truth_dict, truth=True)
+# chain_dict = make_dict(values_out)
+
+chain = cc.ChainConsumer()
+chain.add_chain(test)
+chain.configure(serif=True, shade=True, bar_shade=True, 
+                shade_alpha=0.2, spacing=1., max_ticks=3)
+fig = chain.plotter.plot(truth=truth_dict_in)
+# fig.set_size_inches((4,4))
+fig.set_size_inches((12,12))
+fig.savefig('hmc', dpi=200, facecolor='w')
+
+fig.axes
 
 
