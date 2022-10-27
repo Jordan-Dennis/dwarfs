@@ -9,6 +9,10 @@ import chainconsumer as cc
 from pupils import NicmosColdMask, HubblePupil
 
 mpl.rcParams["text.usetex"] = True
+mpl.rcParams['image.cmap'] = 'inferno'
+mpl.rcParams["font.family"] = 'serif'
+mpl.rcParams["text.usetex"] = 'true'
+mpl.rcParams['figure.dpi'] = 120
 
 chains = hdfdict.load("chains.hdf5")
 chains = {key: np.array(chains[key]) for key in chains}
@@ -64,11 +68,6 @@ with open("data/filters/HST_NICMOS1.F170M.dat") as filter_data:
 
 dl_nicmos_filter = dl.Filter(nicmos_filter[:, 0], nicmos_filter[:, 1])
 
-plt.subplot(1, 2, 2)
-plt.title("Input filter")
-plt.scatter(dl_nicmos_filter.wavelengths, dl_nicmos_filter.throughput)
-plt.show()
-
 wavelengths = np.tile(1e-6*np.linspace(1.6, 1.8, 3), (2, 1))
 weights = np.ones(wavelengths.shape)
 combined_spectrum = dl.CombinedSpectrum(wavelengths, weights).normalise()
@@ -81,61 +80,92 @@ binary_source = dl.BinarySource(true_position, true_flux, true_separation,
                              true_field_angle, true_flux_ratio, 
                              combined_spectrum, resolved, name="Binary")
 
-# +
-# Construct Optical system
 wf_npix = 128
 det_npix = 64
 
-# Zernike aberrations,
 basis = dl.utils.zernike_basis(6, npix=wf_npix)[3:] * 1e-9
 true_coeffs = jr.normal(jr.PRNGKey(0), (basis.shape[0],))
 
 pupils = {"Hubble": HubblePupil(), "Nicmos": NicmosColdMask(true_x_offset, true_y_offset)}
+naive_pupils = {"Hubble": HubblePupil(), "Nicmos": NicmosColdMask(0., 0.)}
 
-# Construct optical layers,
 true_pixel_scale = dl.utils.arcsec2rad(0.043)
+
 layers = [dl.CreateWavefront(wf_npix, 2.4, wavefront_type="Angular"),
-          dl.TiltWavefront(),
-          dl.CompoundAperture(pupils),
-          dl.ApplyBasisOPD(basis, true_coeffs),
-          dl.NormaliseWavefront(),
-          dl.AngularMFT(true_pixel_scale, det_npix)]
+    dl.TiltWavefront(),
+    dl.CompoundAperture(pupils),
+    dl.ApplyBasisOPD(basis, true_coeffs),
+    dl.NormaliseWavefront(),
+    dl.AngularMFT(true_pixel_scale, det_npix)]
 
-# +
-# Construct Detector,
-true_bg = 10.
-true_pixel_response = 1 + 0.05*jr.normal(jr.PRNGKey(0), (det_npix, det_npix))
-detector_layers = [
-    dl.AddConstant(true_bg),
-    # dl.ApplyPixelResponse(true_pixel_response),
-]
+naive_layers = [dl.CreateWavefront(wf_npix, 2.4, wavefront_type="Angular"),
+    dl.TiltWavefront(),
+    dl.CompoundAperture(pupils),
+    dl.NormaliseWavefront(),
+    dl.AngularMFT(true_pixel_scale, det_npix)]
 
-# Construct Telescope,
-telescope = dl.Telescope(dl.Optics(layers), 
-                         dl.Scene([binary_source]),
-                         filter=dl_nicmos_filter,
-                         detector=dl.Detector(detector_layers))
+telescope = dl.Telescope(
+     dl.Optics(layers), 
+     dl.Scene([binary_source]),
+     filter=dl_nicmos_filter,
+     detector=dl.Detector([dl.AddConstant(true_bg)]))
+
+naive_telescope = dl.Telescope(
+    dl.Optics(naive_layers), 
+    dl.Scene([binary_source]),
+    filter=dl_nicmos_filter)
 
 ## Gerenate psf,
 psf = telescope.model_scene()
-psf_photon = jr.poisson(jr.PRNGKey(0), psf)
-bg_noise = true_bg + jr.normal(jr.PRNGKey(0), psf_photon.shape)
-image = psf_photon + bg_noise
-data = image.flatten()
+naive_psf = naive_telescope.model_scene()
+bg_noise = true_bg #+ jr.normal(jr.PRNGKey(0), psf_photon.shape)
+data = psf + bg_noise
 
-plt.figure(figsize=(15, 4))
-plt.subplot(1, 3, 1)
-plt.title("PSF")
-plt.imshow(psf ** 0.25)
+import matplotlib.cm as cm
+
+mappables = []
+
+# So I need to add the plots of the aperture but I don't know if it will be in the same figure. 
+
+# +
+fig, axes = plt.subplots(3, 3, figsize=(12, 12))
+axes[0][0].set_title("PSF")
+mappables.append(axes[0][0].imshow(psf ** 0.25))
+axes[0][0].set_xticks([])
+axes[0][0].set_yticks([])
+plt.colorbar(mappables[-1], fraction=0.045, ax=axes[0][0])
+
+axes[0][1].set_title("Residuals")
+mappables.append(axes[0][1].imshow(abs(data - psf) ** 0.25))
+axes[0][1].set_xticks([])
+axes[0][1].set_yticks([])
+plt.colorbar(mappables[-1], fraction=0.045, ax=axes[0][1])
+
+axes[0][2].set_title("Data")
+mappables.append(axes[0][2].imshow(data ** 0.25))
+axes[0][2].set_xticks([])
+axes[0][2].set_yticks([])
+plt.colorbar(mappables[-1], fraction=0.045, ax=axes[0][2])
+
+
+plt.subplot(3, 3, 6)
+plt.title("Niave Model")
+plt.imshow(naive_psf ** 0.25)
+plt.xticks([])
+plt.yticks([])
 plt.colorbar()
 
-plt.subplot(1, 3, 2),
-plt.title("PSF + Photon")
-plt.imshow(psf_photon ** 0.25)
-plt.colorbar()
 
-plt.subplot(1, 3, 3)
-plt.title("Data")
-plt.imshow(image ** 0.25)
+plt.subplot(3, 3, 9)
+plt.title("Residuals")
+plt.imshow(abs(data - naive_psf) ** 0.25)
+plt.xticks([])
+plt.yticks([])
 plt.colorbar()
+plt.tight_layout()
 plt.show()
+# -
+
+# Now I have all the relevant tools to create the figure at my disposal however, I am going to head home now so that I can get everything that I need to get done in my life done. There will probably be some more work on this after dinner. 
+
+
